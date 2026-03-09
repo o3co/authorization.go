@@ -162,14 +162,18 @@ func GetMethodPermission(fullMethodName string) (*pb.Policy, error) {
 	log.Printf("[GetMethodPermission] メソッドディスクリプター: %s", methodDesc.FullName())
 
 	// メソッドオプションを取得
-	methodOptions := methodDesc.Options().(*descriptorpb.MethodOptions)
-
-	log.Printf("[GetMethodPermission] メソッドオプション: %v", methodOptions)
-
-	if methodOptions == nil {
+	opts := methodDesc.Options()
+	if opts == nil {
 		return nil, nil // オプションが設定されていない
 	}
 
+	methodOptions, ok := opts.(*descriptorpb.MethodOptions)
+	if !ok {
+		log.Printf("[GetMethodPermission] 内部エラー: 予期しないメソッドオプション型: %T", opts)
+		return nil, fmt.Errorf("internal error: unexpected method options type %T", opts)
+	}
+
+	log.Printf("[GetMethodPermission] メソッドオプション: %v", methodOptions)
 	// カスタムpermissionオプションを抽出
 	// 拡張が存在するかチェック
 	if proto.HasExtension(methodOptions, pb.E_Policy) {
