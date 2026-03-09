@@ -20,11 +20,14 @@ import (
 )
 
 // ResolvedPermission 解決済み権限情報
-type ResolvedPlicy struct {
+type ResolvedPolicy struct {
 	Resource string // "sample:01KF6PF398G9PZK7JE075ZDM5S" (置換済み)
 	Action   string // "read"
 }
 
+// Backward compatibility alias for the old misspelled type name.
+// TODO: Consider deprecating ResolvedPlicy in favor of ResolvedPolicy.
+type ResolvedPlicy = ResolvedPolicy
 // RPCMethod は gRPC のフルメソッド名を分解した構造体
 type RPCMethod struct {
 	Service string
