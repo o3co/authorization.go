@@ -134,8 +134,16 @@ func (c *permissionVerifierClient) Verify(ctx context.Context, resource, action 
 	// ボディを読み出してログに出力（デバッグに有用）。読み取り失敗は無視して続行。
 	respBody, _ := io.ReadAll(resp.Body)
 	log.Printf("[AuthClient] response status: %d", resp.StatusCode)
-	log.Printf("[AuthClient] response body: %s", string(respBody))
 
+	// レスポンスボディは常にフルで出力せず、エラー時のみかつ長さを制限してログに出す。
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		const maxLoggedBodySize = 1024
+		logBody := respBody
+		if len(logBody) > maxLoggedBodySize {
+			logBody = logBody[:maxLoggedBodySize]
+		}
+		log.Printf("[AuthClient] response body (truncated to %d bytes): %s", maxLoggedBodySize, string(logBody))
+	}
 	// --- ステータスコードに基づく判定 -------------------------------------
 	// 2xx 系は成功として扱う。
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
