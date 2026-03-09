@@ -16,53 +16,74 @@ import (
 	"google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/types/descriptorpb"
 
-	pb "github.com/o3co/authorization.go/generated/go/schema"
+	pb "github.com/o3co/authorization.go/generated/schema"
 )
 
-// ResolvedPermission 解決済み権限情報
-type ResolvedPolicy struct {
-	Resource string // "sample:01KF6PF398G9PZK7JE075ZDM5S" (置換済み)
-	Action   string // "read"
+type ctxKey string
+
+const ctxKeyPolicy ctxKey = "policy"
+
+type Policy struct {
+	Resource string
+	Action   string
 }
 
-// Backward compatibility alias for the old misspelled type name.
-// TODO: Consider deprecating ResolvedPlicy in favor of ResolvedPolicy.
-type ResolvedPlicy = ResolvedPolicy
+func WithPolicy(ctx context.Context, resource, action string) context.Context {
+	return context.WithValue(ctx, ctxKeyPolicy, &Policy{
+		Resource: resource,
+		Action:   action,
+	})
+}
+
+func WithPolicyMetadata(ctx context.Context, pm *Policy) context.Context {
+	return context.WithValue(ctx, ctxKeyPolicy, pm)
+}
+
+func PolicyFromContext(ctx context.Context) (*Policy, bool) {
+	v := ctx.Value(ctxKeyPolicy)
+
+	if v == nil {
+		return nil, false
+	}
+
+	pm, ok := v.(*Policy)
+
+	return pm, ok
+}
+
 // RPCMethod は gRPC のフルメソッド名を分解した構造体
 type RPCMethod struct {
 	Service string
 	Method  string
 }
 
-// ResourceResolverInterceptor protobufオプションとリクエストからリソースを解決
-func ResourceResolverInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp interface{}, err error) {
-	log.Printf("[resourceResolver] processing method: %s", info.FullMethod)
+// ResourcePolicyInterceptor protobufオプションとリクエストからリソースを解決
+func ResourcePolicyInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp interface{}, err error) {
+	log.Printf("[resourcePolicyInterceptor] processing method: %s", info.FullMethod)
 
 	// protobufからpermissionを取得
-	permission, err := GetMethodPermission(info.FullMethod)
+	policy, err := GetMethodPolicy(info.FullMethod)
 
 	if err != nil {
-		log.Printf("[resourceResolver] failed to get method permission: %v", err)
-		return nil, status.Errorf(codes.Internal, "failed to get method permission: %v", err)
+		log.Printf("[resourcePolicyInterceptor] failed to get method policy: %v", err)
+		return nil, status.Errorf(codes.Internal, "failed to get method policy: %v", err)
 	}
 
-	if permission == nil {
+	if policy == nil {
 		// 権限定義なし、継続
 		return handler(ctx, req)
 	}
 
-	log.Printf("[resourceResolver] permission: %+v", permission)
-
+	log.Printf("[resourcePolicyInterceptor] policy: %+v", policy)
 	// リソース解決処理
-	resolvedResource, err := resolveResourceFromRequest(permission, req)
+	resolvedResource, err := resolveResourceFromRequest(policy, req)
 
 	// リソース解決に失敗した場合はInternalServerError
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "resource resolved failed: %v", err)
 	}
 
-	ctx = context.WithValue(ctx, "resource", resolvedResource.Resource)
-	ctx = context.WithValue(ctx, "action", resolvedResource.Action)
+	ctx = WithPolicy(ctx, resolvedResource.Resource, resolvedResource.Action)
 
 	return handler(ctx, req)
 }
@@ -99,8 +120,8 @@ func parseFullMethodName(fullMethodName string) (RPCMethod, error) {
 	return RPCMethod{Service: serviceName, Method: methodName}, nil
 }
 
-// GetMethodPermission protobufメソッドから権限情報を取得
-func GetMethodPermission(fullMethodName string) (*pb.Policy, error) {
+// GetMethodPolicy protobufメソッドから権限情報を取得
+func GetMethodPolicy(fullMethodName string) (*pb.Policy, error) {
 	// "/sample.v1.SampleService/SearchSamples" -> RPCMethod{Service: "sample.v1.SampleService", Method: "SearchSamples"}
 	mm, err := parseFullMethodName(fullMethodName)
 
@@ -113,18 +134,18 @@ func GetMethodPermission(fullMethodName string) (*pb.Policy, error) {
 	//.protoファイルで定義されたサービス（例：SampleService）のメタ情報を保持するオブジェクトです。
 	var serviceDesc protoreflect.ServiceDescriptor
 
-	log.Printf("[GetMethodPermission] 探しているサービス名: %s", serviceName)
+	log.Printf("[GetMethodPolicy] 探しているサービス名: %s", serviceName)
 
 	//Protocol Buffersの.protoファイル1つ分のメタ情報を表すインターフェース
 	//1つの.protoファイル（例：sample.proto）全体の情報を保持するオブジェクト
 	protoregistry.GlobalFiles.RangeFiles(func(fd protoreflect.FileDescriptor) bool {
-		log.Printf("[GetMethodPermission] .protoファイルをチェック中: %s", fd.Path())
+		log.Printf("[GetMethodPolicy] .protoファイルをチェック中: %s", fd.Path())
 
 		// 各ファイルで定義されているサービス一覧を取得
 		// Services{{Name: ServerReflection, Methods: [{Name: ServerReflectionInfo, Input: grpc.reflection.v1.ServerReflectionRequest, Output: grpc.reflection.v1.ServerReflectionResponse, IsStreamingClient: true, IsStreamingServer: true}]}}
 		services := fd.Services()
 
-		log.Printf("[GetMethodPermission] このファイル内のサービス数: %d", services.Len())
+		log.Printf("[GetMethodPolicy] このファイル内のサービス数: %d", services.Len())
 
 		for i := 0; i < services.Len(); i++ {
 			// i番目のサービスを取得
@@ -132,51 +153,52 @@ func GetMethodPermission(fullMethodName string) (*pb.Policy, error) {
 
 			svcName := string(svc.FullName())
 
-			log.Printf("[GetMethodPermission] 発見したサービス [%d]: %s", i, svcName)
+			log.Printf("[GetMethodPolicy] 発見したサービス [%d]: %s", i, svcName)
 
 			// サービス名が一致するかチェック
 			if svcName == serviceName {
-				log.Printf("[GetMethodPermission] 🎯 サービスが見つかりました！ %s", svcName)
+				log.Printf("[GetMethodPolicy] 🎯 サービスが見つかりました！ %s", svcName)
 
 				serviceDesc = svc
 				return false // 見つかったので停止
 			}
 		}
 
-		log.Printf("[GetMethodPermission] このファイルには目的のサービスがありません、次へ...")
+		log.Printf("[GetMethodPolicy] このファイルには目的のサービスがありません、次へ...")
 		return true // 継続
 	})
 
 	if serviceDesc == nil {
-		log.Printf("[GetMethodPermission] サービスディスクリプターが見つかりませんでした")
+		log.Printf("[GetMethodPolicy] サービスディスクリプターが見つかりませんでした")
 		return nil, fmt.Errorf("service descriptor not found for %s", serviceName)
 	}
 
-	log.Printf("[GetMethodPermission] サービスディスクリプター: %s", serviceDesc.FullName())
-
+	log.Printf("[GetMethodPolicy] サービスディスクリプター: %s", serviceDesc.FullName())
 	// メソッドディスクリプターを取得
 	methodDesc := serviceDesc.Methods().ByName(protoreflect.Name(methodName))
 
 	if methodDesc == nil {
-		log.Printf("[GetMethodPermission] メソッドディスクリプターが見つかりませんでした: %s", methodName)
+		log.Printf("[GetMethodPolicy] メソッドディスクリプターが見つかりませんでした: %s", methodName)
 		return nil, fmt.Errorf("method %s not found in service %s", methodName, serviceName)
 	}
 
-	log.Printf("[GetMethodPermission] メソッドディスクリプター: %s", methodDesc.FullName())
+	log.Printf("[GetMethodPolicy] メソッドディスクリプター: %s", methodDesc.FullName())
 
 	// メソッドオプションを取得
 	opts := methodDesc.Options()
+
 	if opts == nil {
 		return nil, nil // オプションが設定されていない
 	}
 
 	methodOptions, ok := opts.(*descriptorpb.MethodOptions)
+
 	if !ok {
-		log.Printf("[GetMethodPermission] 内部エラー: 予期しないメソッドオプション型: %T", opts)
+		log.Printf("[GetMethodPolicy] 内部エラー: 予期しないメソッドオプション型: %T", opts)
 		return nil, fmt.Errorf("internal error: unexpected method options type %T", opts)
 	}
 
-	log.Printf("[GetMethodPermission] メソッドオプション: %v", methodOptions)
+	log.Printf("[GetMethodPolicy] メソッドオプション: %v", methodOptions)
 	// カスタムpermissionオプションを抽出
 	// 拡張が存在するかチェック
 	if proto.HasExtension(methodOptions, pb.E_Policy) {
@@ -192,19 +214,19 @@ func GetMethodPermission(fullMethodName string) (*pb.Policy, error) {
 	return nil, nil // permissionオプションが設定されていない
 }
 
-// resolveResourceFromRequest リソースを解決 (permission とリクエストからプレースホルダを置換)
-func resolveResourceFromRequest(permission *pb.Policy, req interface{}) (*ResolvedPlicy, error) {
+// resolveResourceFromRequest リソースを解決 (policy とリクエストからプレースホルダを置換)
+func resolveResourceFromRequest(policy *pb.Policy, req interface{}) (*Policy, error) {
 	// permissionがnilの場合は解決できないのでnilを返す
-	if permission == nil {
+	if policy == nil {
 		return nil, nil
 	}
 
-	resource := permission.Resource
+	resource := policy.Resource
 
 	log.Printf("[resolveResourceFromRequest] original resource template: %s", resource)
 
 	// resource_fieldsでテンプレート置換
-	for _, field := range permission.FieldMappings {
+	for _, field := range policy.FieldMappings {
 		// プレースホルダーの形式は "<field_name>" とする
 		placeholder := fmt.Sprintf("<%s>", field.Placeholder)
 
@@ -226,9 +248,9 @@ func resolveResourceFromRequest(permission *pb.Policy, req interface{}) (*Resolv
 
 	log.Printf("[resolveResourceFromRequest] final resource: %s", resource)
 
-	return &ResolvedPlicy{
+	return &Policy{
 		Resource: resource,
-		Action:   permission.Action,
+		Action:   policy.Action,
 	}, nil
 }
 

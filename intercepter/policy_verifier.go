@@ -9,19 +9,21 @@ import (
 	"google.golang.org/grpc"
 )
 
-// authorizationInterceptor 認可チェックを行うインターセプター
-func AuthorizationInterceptor(permissionVerifierClient client.PermissionVerifierClient) grpc.UnaryServerInterceptor {
+// PolicyVerifierInterceptor 認可チェックを行うインターセプター
+func PolicyVerifierInterceptor(permissionVerifierClient client.PermissionVerifierClient) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		log.Printf("[authorizationInterceptor] processing method: %s", info.FullMethod)
+		log.Printf("[policyVerifierInterceptor] processing method: %s", info.FullMethod)
 
-		// contextから解決済みリソース情報を取得
-		resource, resourceOk := ctx.Value(contextKeyResource).(string)
-		action, actionOk := ctx.Value(contextKeyAction).(string)
+		// contextから解決済みポリシーメタデータを取得
+		pm, ok := PolicyFromContext(ctx)
 
-		// リソース情報がない場合は認可チェックできないので処理継続
-		if !resourceOk || !actionOk {
+		if !ok {
+			// リソース情報がない場合は認可チェックできないので処理継続
 			return handler(ctx, req)
 		}
+
+		resource := pm.Resource
+		action := pm.Action
 
 		// ログでリソース情報を表示
 		log.Printf("[authorizationInterceptor] Resource: %s", resource)

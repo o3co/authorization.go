@@ -37,7 +37,7 @@ func NewPermissionVerifierClient(httpClient *http.Client, baseURL string) Permis
 
 type Token struct {
 	TokenType string `json:"tokenType"`
-	Value    string `json:"value"`
+	Value     string `json:"value"`
 }
 
 // GetToken gRPCメタデータからAuthorizationトークンを取得

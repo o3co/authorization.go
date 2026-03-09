@@ -4,7 +4,6 @@ syntax = "proto3";
 // パッケージ定義
 package policy.v1;
 
-// Go import path must contain a '.' or '/'. Use repository module path.
 option go_package = "github.com/o3co/authorization.go/schema;authorization";
 
 import "google/protobuf/descriptor.proto";

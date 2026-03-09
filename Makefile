@@ -7,7 +7,7 @@ WORKDIR ?= $(CURDIR)
 # directory for generated artifacts
 TARGET_DIR ?= generated
 # Go-specific generated output directory
-GO_TARGET_DIR ?= $(TARGET_DIR)/go
+GO_TARGET_DIR ?= $(TARGET_DIR)/
 # proto source directory
 SCHEMA_DIR ?= $(WORKDIR)/schema
 # proto files to generate from
