@@ -15,8 +15,8 @@ func AuthorizationInterceptor(permissionVerifierClient client.PermissionVerifier
 		log.Printf("[authorizationInterceptor] processing method: %s", info.FullMethod)
 
 		// contextから解決済みリソース情報を取得
-		resource, resourceOk := ctx.Value("resource").(string)
-		action, actionOk := ctx.Value("action").(string)
+		resource, resourceOk := ctx.Value(contextKeyResource).(string)
+		action, actionOk := ctx.Value(contextKeyAction).(string)
 
 		// リソース情報がない場合は認可チェックできないので処理継続
 		if !resourceOk || !actionOk {
