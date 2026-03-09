@@ -242,45 +242,43 @@ func extractFieldFromRequest(req interface{}, fieldPath string) (string, error) 
 		// proto側のフィールド名で検索（例: "id"）
 		fd := m.Descriptor().Fields().ByName(protoreflect.Name(fieldPath))
 
-		if fd.HasOptionalKeyword() {
-			return "", fmt.Errorf("field %s is optional, value may not be set", fieldPath)
+		if fd == nil {
+			return "", fmt.Errorf("field %s not found in request", fieldPath)
 		}
 
-		if fd != nil {
-			val := m.Get(fd)
+		if !m.Has(fd) {
+			return "", fmt.Errorf("field %s is not set in request", fieldPath)
+		}
 
-			if !m.Has(fd) {
-				return "", fmt.Errorf("field %s is not set in request", fieldPath)
-			}
+		val := m.Get(fd)
 
-			// list/mapは未対応
-			if fd.IsList() || fd.IsMap() {
-				log.Printf("[extractFieldFromRequest] field %s is list/map, unsupported", fieldPath)
-				return "", fmt.Errorf("field %s is list/map, unsupported", fieldPath)
-			}
+		// list/mapは未対応
+		if fd.IsList() || fd.IsMap() {
+			log.Printf("[extractFieldFromRequest] field %s is list/map, unsupported", fieldPath)
+			return "", fmt.Errorf("field %s is list/map, unsupported", fieldPath)
+		}
 
-			switch fd.Kind() {
-			case protoreflect.StringKind:
-				return val.String(), nil
-			case protoreflect.BytesKind:
-				b := val.Bytes()
-				// UTF-8 の場合はそのまま文字列で返す
-				if utf8.Valid(b) {
-					return string(b), nil
-				}
-				// バイナリの場合は hex エンコードして返す
-				return hex.EncodeToString(b), nil
-			case protoreflect.Int32Kind, protoreflect.Sint32Kind, protoreflect.Sfixed32Kind,
-				protoreflect.Int64Kind, protoreflect.Sint64Kind, protoreflect.Sfixed64Kind:
-				return fmt.Sprintf("%d", val.Int()), nil
-			case protoreflect.Uint32Kind, protoreflect.Uint64Kind:
-				return fmt.Sprintf("%d", val.Uint()), nil
-			case protoreflect.BoolKind:
-				return fmt.Sprintf("%v", val.Bool()), nil
-			default:
-				log.Printf("[extractFieldFromRequest] unsupported proto field kind %s for %s", fd.Kind(), fieldPath)
-				return "", fmt.Errorf("unsupported proto field kind %s for %s", fd.Kind(), fieldPath)
+		switch fd.Kind() {
+		case protoreflect.StringKind:
+			return val.String(), nil
+		case protoreflect.BytesKind:
+			b := val.Bytes()
+			// UTF-8 の場合はそのまま文字列で返す
+			if utf8.Valid(b) {
+				return string(b), nil
 			}
+			// バイナリの場合は hex エンコードして返す
+			return hex.EncodeToString(b), nil
+		case protoreflect.Int32Kind, protoreflect.Sint32Kind, protoreflect.Sfixed32Kind,
+			protoreflect.Int64Kind, protoreflect.Sint64Kind, protoreflect.Sfixed64Kind:
+			return fmt.Sprintf("%d", val.Int()), nil
+		case protoreflect.Uint32Kind, protoreflect.Uint64Kind:
+			return fmt.Sprintf("%d", val.Uint()), nil
+		case protoreflect.BoolKind:
+			return fmt.Sprintf("%v", val.Bool()), nil
+		default:
+			log.Printf("[extractFieldFromRequest] unsupported proto field kind %s for %s", fd.Kind(), fieldPath)
+			return "", fmt.Errorf("unsupported proto field kind %s for %s", fd.Kind(), fieldPath)
 		}
 	}
 
