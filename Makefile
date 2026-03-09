@@ -1,5 +1,5 @@
 .PHONY: install
-install: proto/tools
+install: generate
 
 # --- variables (defaults can be overridden by environment) ---
 # project working directory (defaults to current directory)
