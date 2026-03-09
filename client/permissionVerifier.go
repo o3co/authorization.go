@@ -57,9 +57,13 @@ func GetToken(ctx context.Context) (*Token, error) {
 
 	token := values[0]
 
-	tokenType := strings.Split(token, " ")[0]
-	tokenValue := strings.Split(token, " ")[1]
+	parts := strings.Fields(token)
+	if len(parts) < 2 {
+		return nil, fmt.Errorf("invalid authorization header format")
+	}
 
+	tokenType := parts[0]
+	tokenValue := parts[1]
 	return &Token{TokenType: tokenType, Value: tokenValue}, nil
 }
 
