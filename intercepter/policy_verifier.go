@@ -15,15 +15,15 @@ func PolicyVerifierInterceptor(permissionVerifierClient client.PermissionVerifie
 		log.Printf("[policyVerifierInterceptor] processing method: %s", info.FullMethod)
 
 		// contextから解決済みポリシーメタデータを取得
-		pm, ok := PolicyFromContext(ctx)
+		policy, ok := PolicyFromContext(ctx)
 
 		if !ok {
 			// リソース情報がない場合は認可チェックできないので処理継続
 			return handler(ctx, req)
 		}
 
-		resource := pm.Resource
-		action := pm.Action
+		resource := policy.Resource
+		action := policy.Action
 
 		// ログでリソース情報を表示
 		log.Printf("[authorizationInterceptor] Resource: %s", resource)
