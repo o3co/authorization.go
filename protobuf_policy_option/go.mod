@@ -1,9 +1,8 @@
-module github.com/o3co/authorization.go
+module github.com/o3co/authorization.go/protobuf_policy_option
 
 go 1.25.5
 
 require (
-	github.com/gurkankaymak/hocon v1.2.23
 	google.golang.org/grpc v1.79.2
 	google.golang.org/protobuf v1.36.10
 )

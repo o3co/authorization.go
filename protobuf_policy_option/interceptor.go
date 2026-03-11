@@ -16,7 +16,7 @@ import (
 	"google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/types/descriptorpb"
 
-	pb "github.com/o3co/authorization.go/generated/schema"
+	pb "github.com/o3co/authorization.go/protobuf_policy_option/schema"
 )
 
 type ctxKey string
@@ -33,10 +33,6 @@ func WithPolicy(ctx context.Context, resource, action string) context.Context {
 		Resource: resource,
 		Action:   action,
 	})
-}
-
-func WithPolicyMetadata(ctx context.Context, pm *Policy) context.Context {
-	return context.WithValue(ctx, ctxKeyPolicy, pm)
 }
 
 func PolicyFromContext(ctx context.Context) (*Policy, bool) {
@@ -57,15 +53,15 @@ type RPCMethod struct {
 	Method  string
 }
 
-// ResourcePolicyInterceptor protobufオプションとリクエストからリソースを解決
-func ResourcePolicyInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp interface{}, err error) {
-	log.Printf("[resourcePolicyInterceptor] processing method: %s", info.FullMethod)
+// Interceptor protobufオプションとリクエストからリソースを解決
+func Interceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp interface{}, err error) {
+	log.Printf("[interceptor] processing method: %s", info.FullMethod)
 
 	// protobufからpermissionを取得
 	policy, err := GetMethodPolicy(info.FullMethod)
 
 	if err != nil {
-		log.Printf("[resourcePolicyInterceptor] failed to get method policy: %v", err)
+		log.Printf("[interceptor] failed to get method policy: %v", err)
 		return nil, status.Errorf(codes.Internal, "failed to get method policy: %v", err)
 	}
 
@@ -74,7 +70,7 @@ func ResourcePolicyInterceptor(ctx context.Context, req interface{}, info *grpc.
 		return handler(ctx, req)
 	}
 
-	log.Printf("[resourcePolicyInterceptor] policy: %+v", policy)
+	log.Printf("[interceptor] policy: %+v", policy)
 	// リソース解決処理
 	resolvedResource, err := resolveResourceFromRequest(policy, req)
 
