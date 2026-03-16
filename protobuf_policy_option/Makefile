@@ -1,6 +1,3 @@
-.PHONY: install
-install: generate
-
 # --- variables (defaults can be overridden by environment) ---
 # project working directory (defaults to current directory)
 WORKDIR ?= $(CURDIR)
