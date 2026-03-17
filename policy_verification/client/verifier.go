@@ -107,6 +107,31 @@ type token struct {
 	Value     string
 }
 
+type contextKey struct{}
+
+// WithRequestID x-request-id を context に保存する（interceptor から呼び出す）。
+func WithRequestID(ctx context.Context, requestID string) context.Context {
+	return context.WithValue(ctx, contextKey{}, requestID)
+}
+
+// getRequestID context または gRPC incoming metadata から x-request-id を取得する。
+// context に値がある場合はそちらを優先し、なければ metadata を参照する。
+// どちらにも存在しない場合は空文字を返す。
+func getRequestID(ctx context.Context) string {
+	if v, ok := ctx.Value(contextKey{}).(string); ok && v != "" {
+		return v
+	}
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return ""
+	}
+	values := md["x-request-id"]
+	if len(values) == 0 {
+		return ""
+	}
+	return values[0]
+}
+
 // getToken gRPCメタデータからAuthorizationトークンを取得
 func getToken(ctx context.Context) (*token, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
@@ -166,6 +191,11 @@ func (c *verifierClient) Verify(ctx context.Context, resource, action string) er
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", tok.TokenType+" "+tok.Value) // JWT を Authorization ヘッダで送信
 
+	// x-request-id が存在する場合のみ転送する（生成は行わない）
+	if requestID := getRequestID(ctx); requestID != "" {
+		req.Header.Set("x-request-id", requestID)
+	}
+
 	// --- リクエスト送信 ---------------------------------------------------
 	resp, err := c.httpClient.Do(req)
 
@@ -184,7 +214,8 @@ func (c *verifierClient) Verify(ctx context.Context, resource, action string) er
 		c.logger.Error("failed to read response body", "error", err)
 		respBody = nil
 	}
-	c.logger.Debug("response received", "status", resp.StatusCode)
+	requestID := getRequestID(ctx)
+	c.logger.Debug("response received", "status", resp.StatusCode, "x-request-id", requestID)
 
 	// レスポンスボディは常にフルで出力せず、エラー時のみかつ長さを制限してログに出す。
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -193,7 +224,7 @@ func (c *verifierClient) Verify(ctx context.Context, resource, action string) er
 		if len(logBody) > maxLoggedBodySize {
 			logBody = logBody[:maxLoggedBodySize]
 		}
-		c.logger.Error("error response from authorization server", "status", resp.StatusCode, "body", string(logBody))
+		c.logger.Error("error response from authorization server", "status", resp.StatusCode, "body", string(logBody), "x-request-id", requestID)
 	}
 	// --- ステータスコードに基づく判定 -------------------------------------
 	// 2xx 系は成功として扱う。
