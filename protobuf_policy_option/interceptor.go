@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -70,13 +69,13 @@ type rpcMethod struct {
 
 // Interceptor protobufオプションとリクエストからリソースを解決
 func Interceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp interface{}, err error) {
-	log.Printf("[interceptor] processing method: %s", info.FullMethod)
+	logger.Debug("processing method", "method", info.FullMethod)
 
 	// protobufからpermissionを取得
 	policy, err := getMethodPolicy(info.FullMethod)
 
 	if err != nil {
-		log.Printf("[interceptor] failed to get method policy: %v", err)
+		logger.Error("failed to get method policy", "method", info.FullMethod, "error", err)
 		return nil, status.Errorf(codes.Internal, "failed to get method policy: %v", err)
 	}
 
@@ -88,7 +87,7 @@ func Interceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInf
 		return handler(ctx, req)
 	}
 
-	log.Printf("[interceptor] policy: %+v", policy)
+	logger.Debug("policy resolved", "resource", policy.Resource, "action", policy.Action)
 	// リソース解決処理
 	resolvedResource, err := resolveResourceFromRequest(policy, req)
 
@@ -205,7 +204,7 @@ func lookupMethodPolicy(fullMethodName string) (*pb.Policy, error) {
 	if proto.HasExtension(methodOptions, pb.E_Policy) {
 		ext := proto.GetExtension(methodOptions, pb.E_Policy)
 		if permission, ok := ext.(*pb.Policy); ok {
-			log.Printf("[GetMethodPolicy] policy found for %s: resource=%s action=%s", fullMethodName, permission.Resource, permission.Action)
+			logger.Debug("policy found", "method", fullMethodName, "resource", permission.Resource, "action", permission.Action)
 			return permission, nil
 		}
 	}
@@ -217,7 +216,7 @@ func lookupMethodPolicy(fullMethodName string) (*pb.Policy, error) {
 func resolveResourceFromRequest(policy *pb.Policy, req interface{}) (*Policy, error) {
 	resource := policy.Resource
 
-	log.Printf("[resolveResourceFromRequest] original resource template: %s", resource)
+	logger.Debug("resolving resource template", "template", resource)
 
 	// resource_fieldsでテンプレート置換
 	for _, field := range policy.FieldMappings {
@@ -233,7 +232,7 @@ func resolveResourceFromRequest(policy *pb.Policy, req interface{}) (*Policy, er
 			value, err := extractFieldFromRequest(req, field.RequestField)
 
 			if err != nil {
-				log.Printf("[resolveResourceFromRequest] failed to extract field %s: %v", field.RequestField, err)
+				logger.Error("failed to extract field", "field", field.RequestField, "error", err)
 
 				return nil, fmt.Errorf("failed to extract field %s: %v", field.RequestField, err)
 			}
@@ -242,7 +241,7 @@ func resolveResourceFromRequest(policy *pb.Policy, req interface{}) (*Policy, er
 		}
 	}
 
-	log.Printf("[resolveResourceFromRequest] final resource: %s", resource)
+	logger.Debug("resolved resource", "resource", resource)
 
 	return &Policy{
 		Resource: resource,
@@ -252,7 +251,7 @@ func resolveResourceFromRequest(policy *pb.Policy, req interface{}) (*Policy, er
 
 // extractFieldFromRequest リクエストからフィールド値を抽出（リフレクション使用）
 func extractFieldFromRequest(req interface{}, fieldPath string) (string, error) {
-	log.Printf("[extractFieldFromRequest] attempting to extract field: %s from request type: %T", fieldPath, req)
+	logger.Debug("extracting field from request", "field", fieldPath, "type", fmt.Sprintf("%T", req))
 
 	// まずprotobufの反射APIで安全に取得を試みる（生成されたメッセージで確実に動作）
 	if pm, ok := req.(proto.Message); ok {
@@ -268,7 +267,7 @@ func extractFieldFromRequest(req interface{}, fieldPath string) (string, error) 
 
 		// list/mapは未対応
 		if fd.IsList() || fd.IsMap() {
-			log.Printf("[extractFieldFromRequest] field %s is list/map, unsupported", fieldPath)
+			logger.Error("unsupported field type: list/map not supported", "field", fieldPath)
 			return "", fmt.Errorf("field %s is list/map, unsupported", fieldPath)
 		}
 
@@ -292,7 +291,7 @@ func extractFieldFromRequest(req interface{}, fieldPath string) (string, error) 
 		case protoreflect.BoolKind:
 			return fmt.Sprintf("%v", val.Bool()), nil
 		default:
-			log.Printf("[extractFieldFromRequest] unsupported proto field kind %s for %s", fd.Kind(), fieldPath)
+			logger.Error("unsupported proto field kind", "kind", fd.Kind(), "field", fieldPath)
 			return "", fmt.Errorf("unsupported proto field kind %s for %s", fd.Kind(), fieldPath)
 		}
 	}

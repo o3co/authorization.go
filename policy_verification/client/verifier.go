@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -155,10 +154,10 @@ func (c *verifierClient) Verify(ctx context.Context, resource, action string) er
 	// 読み取りに失敗した場合は部分データを捨て、空として扱う。
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, c.maxResponseBodySize))
 	if err != nil {
-		log.Printf("[AuthClient] failed to read response body: %v", err)
+		logger.Error("failed to read response body", "error", err)
 		respBody = nil
 	}
-	log.Printf("[AuthClient] response status: %d", resp.StatusCode)
+	logger.Debug("response received", "status", resp.StatusCode)
 
 	// レスポンスボディは常にフルで出力せず、エラー時のみかつ長さを制限してログに出す。
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -167,7 +166,7 @@ func (c *verifierClient) Verify(ctx context.Context, resource, action string) er
 		if len(logBody) > maxLoggedBodySize {
 			logBody = logBody[:maxLoggedBodySize]
 		}
-		log.Printf("[AuthClient] response body (truncated to %d bytes): %s", maxLoggedBodySize, string(logBody))
+		logger.Error("error response from authorization server", "status", resp.StatusCode, "body", string(logBody))
 	}
 	// --- ステータスコードに基づく判定 -------------------------------------
 	// 2xx 系は成功として扱う。
@@ -186,6 +185,6 @@ func (c *verifierClient) Verify(ctx context.Context, resource, action string) er
 	}
 
 	// その他は内部エラーとして扱い、レスポンスボディを含めて原因追跡をしやすくする。
-	log.Printf("[AuthClient] authorization service error: status code %d, response body: %s", resp.StatusCode, string(respBody))
+	logger.Error("unexpected authorization service response", "status", resp.StatusCode)
 	return status.Errorf(codes.Internal, "authorization service error: %d, body: %s", resp.StatusCode, "Failed to verify policy")
 }

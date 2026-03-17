@@ -2,7 +2,6 @@ package interceptor
 
 import (
 	"context"
-	"log"
 
 	client "github.com/o3co/authorization.go/policy_verification/client"
 	policy "github.com/o3co/authorization.go/protobuf_policy_option"
@@ -15,7 +14,7 @@ import (
 // Interceptor 認可チェックを行うインターセプター
 func Interceptor(verifierClient client.VerifierClient) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		log.Printf("[interceptor] processing method: %s", info.FullMethod)
+		logger.Debug("processing method", "method", info.FullMethod)
 
 		// protobuf_policy_option.Interceptor が実行済みかチェック
 		// 未登録の場合はチェーン設定ミスとして Internal エラーを返す
@@ -35,18 +34,16 @@ func Interceptor(verifierClient client.VerifierClient) grpc.UnaryServerIntercept
 		resource := policyData.Resource
 		action := policyData.Action
 
-		// ログでリソース情報を表示
-		log.Printf("[authorizationInterceptor] Resource: %s", resource)
-		log.Printf("[authorizationInterceptor] Action: %s", action)
+		logger.Debug("verifying authorization", "resource", resource, "action", action)
 
 		// 認可チェック実行（クライアントはstatusエラーを返す設計）
 		if err := verifierClient.Verify(ctx, resource, action); err != nil {
-			log.Printf("[authorizationInterceptor] authorization check failed: %v", err)
+			logger.Error("authorization check failed", "resource", resource, "action", action, "error", err)
 
 			return nil, err
 		}
 
-		log.Printf("[authorizationInterceptor] authorization check passed for resource: %s, action: %s", resource, action)
+		logger.Debug("authorization check passed", "resource", resource, "action", action)
 
 		return handler(ctx, req)
 	}
