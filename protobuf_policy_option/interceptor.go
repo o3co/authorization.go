@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -61,6 +62,21 @@ func PolicyFromContext(ctx context.Context) (*Policy, bool) {
 	return pm, ok
 }
 
+// config はインターセプターの設定
+type config struct {
+	logLevel slog.Level
+}
+
+// Option はインターセプターの設定オプション
+type Option func(*config)
+
+// WithLogLevel ログレベルを指定する。未指定時のデフォルトは slog.LevelError。
+func WithLogLevel(level slog.Level) Option {
+	return func(c *config) {
+		c.logLevel = level
+	}
+}
+
 // rpcMethod は gRPC のフルメソッド名を分解した構造体
 type rpcMethod struct {
 	Service string
@@ -68,37 +84,46 @@ type rpcMethod struct {
 }
 
 // Interceptor protobufオプションとリクエストからリソースを解決
-func Interceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp interface{}, err error) {
-	logger.Debug("processing method", "method", info.FullMethod)
-
-	// protobufからpermissionを取得
-	policy, err := getMethodPolicy(info.FullMethod)
-
-	if err != nil {
-		logger.Error("failed to get method policy", "method", info.FullMethod, "error", err)
-		return nil, status.Errorf(codes.Internal, "failed to get method policy: %v", err)
+func Interceptor(opts ...Option) grpc.UnaryServerInterceptor {
+	cfg := &config{logLevel: slog.LevelError}
+	for _, opt := range opts {
+		opt(cfg)
 	}
+	log := newLogger(cfg.logLevel)
 
-	// Interceptor が実行されたことを常にマーク（policy_verification 側でチェーン設定ミスを検出するため）
-	ctx = markInterceptorRan(ctx)
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		log.Debug("processing method", "method", info.FullMethod)
 
-	if policy == nil {
-		// 権限定義なし、継続
+		// protobufからpermissionを取得
+		policy, err := getMethodPolicy(log, info.FullMethod)
+
+		if err != nil {
+			log.Error("failed to get method policy", "method", info.FullMethod, "error", err)
+			return nil, status.Errorf(codes.Internal, "failed to get method policy: %v", err)
+		}
+
+		// Interceptor が実行されたことを常にマーク（policy_verification 側でチェーン設定ミスを検出するため）
+		ctx = markInterceptorRan(ctx)
+
+		if policy == nil {
+			// 権限定義なし、継続
+			return handler(ctx, req)
+		}
+
+		log.Debug("policy resolved", "resource", policy.Resource, "action", policy.Action)
+
+		// リソース解決処理
+		resolvedResource, err := resolveResourceFromRequest(log, policy, req)
+
+		// リソース解決に失敗した場合はInternalServerError
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "resource resolved failed: %v", err)
+		}
+
+		ctx = withPolicy(ctx, resolvedResource.Resource, resolvedResource.Action)
+
 		return handler(ctx, req)
 	}
-
-	logger.Debug("policy resolved", "resource", policy.Resource, "action", policy.Action)
-	// リソース解決処理
-	resolvedResource, err := resolveResourceFromRequest(policy, req)
-
-	// リソース解決に失敗した場合はInternalServerError
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "resource resolved failed: %v", err)
-	}
-
-	ctx = withPolicy(ctx, resolvedResource.Resource, resolvedResource.Action)
-
-	return handler(ctx, req)
 }
 
 // フルメソッド名からサービスとメソッドを分解して取得する関数
@@ -146,14 +171,14 @@ type cachedPolicy struct {
 var methodPolicyCache sync.Map
 
 // getMethodPolicy protobufメソッドから権限情報を取得
-func getMethodPolicy(fullMethodName string) (*pb.Policy, error) {
+func getMethodPolicy(log *slog.Logger, fullMethodName string) (*pb.Policy, error) {
 	// キャッシュヒット確認（2回目以降はスキャン不要）
 	if v, ok := methodPolicyCache.Load(fullMethodName); ok {
 		c := v.(*cachedPolicy)
 		return c.policy, c.err
 	}
 
-	policy, err := lookupMethodPolicy(fullMethodName)
+	policy, err := lookupMethodPolicy(log, fullMethodName)
 
 	// エラーも含めてキャッシュに登録（再スキャン防止）
 	methodPolicyCache.Store(fullMethodName, &cachedPolicy{policy: policy, err: err})
@@ -161,8 +186,8 @@ func getMethodPolicy(fullMethodName string) (*pb.Policy, error) {
 }
 
 // lookupMethodPolicy GlobalFiles をスキャンしてポリシーを解決する。
-// GetMethodPolicy から初回のみ呼ばれる。
-func lookupMethodPolicy(fullMethodName string) (*pb.Policy, error) {
+// getMethodPolicy から初回のみ呼ばれる。
+func lookupMethodPolicy(log *slog.Logger, fullMethodName string) (*pb.Policy, error) {
 	mm, err := parseFullMethodName(fullMethodName)
 	if err != nil {
 		return nil, err
@@ -204,7 +229,7 @@ func lookupMethodPolicy(fullMethodName string) (*pb.Policy, error) {
 	if proto.HasExtension(methodOptions, pb.E_Policy) {
 		ext := proto.GetExtension(methodOptions, pb.E_Policy)
 		if permission, ok := ext.(*pb.Policy); ok {
-			logger.Debug("policy found", "method", fullMethodName, "resource", permission.Resource, "action", permission.Action)
+			log.Debug("policy found", "method", fullMethodName, "resource", permission.Resource, "action", permission.Action)
 			return permission, nil
 		}
 	}
@@ -213,10 +238,10 @@ func lookupMethodPolicy(fullMethodName string) (*pb.Policy, error) {
 }
 
 // resolveResourceFromRequest リソースを解決 (policy とリクエストからプレースホルダを置換)
-func resolveResourceFromRequest(policy *pb.Policy, req interface{}) (*Policy, error) {
+func resolveResourceFromRequest(log *slog.Logger, policy *pb.Policy, req interface{}) (*Policy, error) {
 	resource := policy.Resource
 
-	logger.Debug("resolving resource template", "template", resource)
+	log.Debug("resolving resource template", "template", resource)
 
 	// resource_fieldsでテンプレート置換
 	for _, field := range policy.FieldMappings {
@@ -229,10 +254,10 @@ func resolveResourceFromRequest(policy *pb.Policy, req interface{}) (*Policy, er
 
 		//リソーステンプレートに該当するプレースホルダーが含まれているかチェック
 		if strings.Contains(resource, placeholder) {
-			value, err := extractFieldFromRequest(req, field.RequestField)
+			value, err := extractFieldFromRequest(log, req, field.RequestField)
 
 			if err != nil {
-				logger.Error("failed to extract field", "field", field.RequestField, "error", err)
+				log.Error("failed to extract field", "field", field.RequestField, "error", err)
 
 				return nil, fmt.Errorf("failed to extract field %s: %v", field.RequestField, err)
 			}
@@ -241,7 +266,7 @@ func resolveResourceFromRequest(policy *pb.Policy, req interface{}) (*Policy, er
 		}
 	}
 
-	logger.Debug("resolved resource", "resource", resource)
+	log.Debug("resolved resource", "resource", resource)
 
 	return &Policy{
 		Resource: resource,
@@ -250,8 +275,8 @@ func resolveResourceFromRequest(policy *pb.Policy, req interface{}) (*Policy, er
 }
 
 // extractFieldFromRequest リクエストからフィールド値を抽出（リフレクション使用）
-func extractFieldFromRequest(req interface{}, fieldPath string) (string, error) {
-	logger.Debug("extracting field from request", "field", fieldPath, "type", fmt.Sprintf("%T", req))
+func extractFieldFromRequest(log *slog.Logger, req interface{}, fieldPath string) (string, error) {
+	log.Debug("extracting field from request", "field", fieldPath, "type", fmt.Sprintf("%T", req))
 
 	// まずprotobufの反射APIで安全に取得を試みる（生成されたメッセージで確実に動作）
 	if pm, ok := req.(proto.Message); ok {
@@ -267,7 +292,7 @@ func extractFieldFromRequest(req interface{}, fieldPath string) (string, error) 
 
 		// list/mapは未対応
 		if fd.IsList() || fd.IsMap() {
-			logger.Error("unsupported field type: list/map not supported", "field", fieldPath)
+			log.Error("unsupported field type: list/map not supported", "field", fieldPath)
 			return "", fmt.Errorf("field %s is list/map, unsupported", fieldPath)
 		}
 
@@ -291,7 +316,7 @@ func extractFieldFromRequest(req interface{}, fieldPath string) (string, error) 
 		case protoreflect.BoolKind:
 			return fmt.Sprintf("%v", val.Bool()), nil
 		default:
-			logger.Error("unsupported proto field kind", "kind", fd.Kind(), "field", fieldPath)
+			log.Error("unsupported proto field kind", "kind", fd.Kind(), "field", fieldPath)
 			return "", fmt.Errorf("unsupported proto field kind %s for %s", fd.Kind(), fieldPath)
 		}
 	}

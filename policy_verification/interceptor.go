@@ -2,6 +2,7 @@ package interceptor
 
 import (
 	"context"
+	"log/slog"
 
 	client "github.com/o3co/authorization.go/policy_verification/client"
 	policy "github.com/o3co/authorization.go/protobuf_policy_option"
@@ -11,10 +12,31 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// config はインターセプターの設定
+type config struct {
+	logLevel slog.Level
+}
+
+// Option はインターセプターの設定オプション
+type Option func(*config)
+
+// WithLogLevel ログレベルを指定する。未指定時のデフォルトは slog.LevelError。
+func WithLogLevel(level slog.Level) Option {
+	return func(c *config) {
+		c.logLevel = level
+	}
+}
+
 // Interceptor 認可チェックを行うインターセプター
-func Interceptor(verifierClient client.VerifierClient) grpc.UnaryServerInterceptor {
+func Interceptor(verifierClient client.VerifierClient, opts ...Option) grpc.UnaryServerInterceptor {
+	cfg := &config{logLevel: slog.LevelError}
+	for _, opt := range opts {
+		opt(cfg)
+	}
+	log := newLogger(cfg.logLevel)
+
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		logger.Debug("processing method", "method", info.FullMethod)
+		log.Debug("processing method", "method", info.FullMethod)
 
 		// protobuf_policy_option.Interceptor が実行済みかチェック
 		// 未登録の場合はチェーン設定ミスとして Internal エラーを返す
@@ -34,16 +56,16 @@ func Interceptor(verifierClient client.VerifierClient) grpc.UnaryServerIntercept
 		resource := policyData.Resource
 		action := policyData.Action
 
-		logger.Debug("verifying authorization", "resource", resource, "action", action)
+		log.Debug("verifying authorization", "resource", resource, "action", action)
 
 		// 認可チェック実行（クライアントはstatusエラーを返す設計）
 		if err := verifierClient.Verify(ctx, resource, action); err != nil {
-			logger.Error("authorization check failed", "resource", resource, "action", action, "error", err)
+			log.Error("authorization check failed", "resource", resource, "action", action, "error", err)
 
 			return nil, err
 		}
 
-		logger.Debug("authorization check passed", "resource", resource, "action", action)
+		log.Debug("authorization check passed", "resource", resource, "action", action)
 
 		return handler(ctx, req)
 	}

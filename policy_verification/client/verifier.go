@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -32,11 +33,19 @@ func WithMaxResponseBodySize(size int64) Option {
 	}
 }
 
+// WithLogLevel ログレベルを指定する。未指定時のデフォルトは slog.LevelError。
+func WithLogLevel(level slog.Level) Option {
+	return func(c *verifierClient) {
+		c.logger = newLogger(level)
+	}
+}
+
 // verifierClient 認可クライアントの実装
 type verifierClient struct {
 	httpClient          *http.Client
 	verifyURL           string
 	maxResponseBodySize int64
+	logger              *slog.Logger
 }
 
 // NewVerifierClient 認可クライアントのコンストラクタ
@@ -67,6 +76,7 @@ func NewVerifierClient(httpClient *http.Client, baseURL string, opts ...Option) 
 		httpClient:          httpClient,
 		verifyURL:           verifyURL,
 		maxResponseBodySize: defaultMaxResponseBodySize,
+		logger:              newLogger(slog.LevelError),
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -154,10 +164,10 @@ func (c *verifierClient) Verify(ctx context.Context, resource, action string) er
 	// 読み取りに失敗した場合は部分データを捨て、空として扱う。
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, c.maxResponseBodySize))
 	if err != nil {
-		logger.Error("failed to read response body", "error", err)
+		c.logger.Error("failed to read response body", "error", err)
 		respBody = nil
 	}
-	logger.Debug("response received", "status", resp.StatusCode)
+	c.logger.Debug("response received", "status", resp.StatusCode)
 
 	// レスポンスボディは常にフルで出力せず、エラー時のみかつ長さを制限してログに出す。
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -166,7 +176,7 @@ func (c *verifierClient) Verify(ctx context.Context, resource, action string) er
 		if len(logBody) > maxLoggedBodySize {
 			logBody = logBody[:maxLoggedBodySize]
 		}
-		logger.Error("error response from authorization server", "status", resp.StatusCode, "body", string(logBody))
+		c.logger.Error("error response from authorization server", "status", resp.StatusCode, "body", string(logBody))
 	}
 	// --- ステータスコードに基づく判定 -------------------------------------
 	// 2xx 系は成功として扱う。
@@ -185,6 +195,6 @@ func (c *verifierClient) Verify(ctx context.Context, resource, action string) er
 	}
 
 	// その他は内部エラーとして扱い、レスポンスボディを含めて原因追跡をしやすくする。
-	logger.Error("unexpected authorization service response", "status", resp.StatusCode)
+	c.logger.Error("unexpected authorization service response", "status", resp.StatusCode)
 	return status.Errorf(codes.Internal, "authorization service error: %d, body: %s", resp.StatusCode, "Failed to verify policy")
 }
