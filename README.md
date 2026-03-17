@@ -31,9 +31,9 @@ authorization.go/
 ```go
 import (
     "log/slog"
-    policyoption       "github.com/o3co/authorization.go/protobuf_policy_option"
-    policyverification "github.com/o3co/authorization.go/policy_verification"
-    pvclient           "github.com/o3co/authorization.go/policy_verification/client"
+    policyoption       "github.com/o3co/grpc.authz/protobuf_policy_option"
+    policyverification "github.com/o3co/grpc.authz/policy_verification"
+    pvclient           "github.com/o3co/grpc.authz/policy_verification/client"
 )
 
 verifier, err := pvclient.NewVerifierClient(
@@ -57,4 +57,4 @@ grpc.NewServer(
 
 ## ライセンス
 
-MIT
+Apache 2.0

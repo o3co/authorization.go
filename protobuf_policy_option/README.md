@@ -16,7 +16,7 @@ gRPC メソッドの `.proto` ファイルにカスタムオプションでポ�
 ## インストール
 
 ```bash
-go get github.com/o3co/authorization.go/protobuf_policy_option
+go get github.com/o3co/grpc.authz/protobuf_policy_option
 ```
 
 ## 使い方
@@ -48,7 +48,7 @@ service ItemService {
 ```go
 import (
     "log/slog"
-    policyoption "github.com/o3co/authorization.go/protobuf_policy_option"
+    policyoption "github.com/o3co/grpc.authz/protobuf_policy_option"
 )
 
 grpc.NewServer(
@@ -64,7 +64,7 @@ grpc.NewServer(
 ### 3. 後続インターセプターでポリシーを取得する
 
 ```go
-import policyoption "github.com/o3co/authorization.go/protobuf_policy_option"
+import policyoption "github.com/o3co/grpc.authz/protobuf_policy_option"
 
 policy, ok := policyoption.PolicyFromContext(ctx)
 if ok {

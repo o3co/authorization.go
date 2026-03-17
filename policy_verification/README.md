@@ -17,7 +17,7 @@ gRPC リクエストの認可チェックを外部の認可サービスに委譲
 ## インストール
 
 ```bash
-go get github.com/o3co/authorization.go/policy_verification
+go get github.com/o3co/grpc.authz/policy_verification
 ```
 
 ## 使い方
@@ -27,7 +27,7 @@ go get github.com/o3co/authorization.go/policy_verification
 ```go
 import (
     "log/slog"
-    pvclient "github.com/o3co/authorization.go/policy_verification/client"
+    pvclient "github.com/o3co/grpc.authz/policy_verification/client"
 )
 
 verifier, err := pvclient.NewVerifierClient(
@@ -46,8 +46,8 @@ if err != nil { ... }
 ```go
 import (
     "log/slog"
-    policyoption       "github.com/o3co/authorization.go/protobuf_policy_option"
-    policyverification "github.com/o3co/authorization.go/policy_verification"
+    policyoption       "github.com/o3co/grpc.authz/protobuf_policy_option"
+    policyverification "github.com/o3co/grpc.authz/policy_verification"
 )
 
 grpc.NewServer(
