@@ -18,8 +18,8 @@ import (
 	"context"
 	"log/slog"
 
-	client "grpc.authorization.go/policy_verification/client"
-	policy "grpc.authorization.go/protobuf_policy_option"
+	client "github.com/o3co/grpc.authz/policy_verification/client"
+	policy "github.com/o3co/grpc.authz/protobuf_policy_option"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"

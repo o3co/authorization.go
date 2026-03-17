@@ -1,11 +1,11 @@
-module grpc.authorization.go/policy_verification
+module github.com/o3co/grpc.authz/policy_verification
 
 go 1.25.5
 
-replace grpc.authorization.go/protobuf_policy_option => ../protobuf_policy_option
+replace github.com/o3co/grpc.authz/protobuf_policy_option => ../protobuf_policy_option
 
 require (
-	grpc.authorization.go/protobuf_policy_option v0.0.0
+	github.com/o3co/grpc.authz/protobuf_policy_option v0.0.0
 	google.golang.org/grpc v1.79.2
 )
 
