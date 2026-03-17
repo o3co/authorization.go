@@ -46,11 +46,16 @@ service ItemService {
 ### 2. インターセプターを登録する
 
 ```go
-import policyoption "github.com/o3co/authorization.go/protobuf_policy_option"
+import (
+    "log/slog"
+    policyoption "github.com/o3co/authorization.go/protobuf_policy_option"
+)
 
 grpc.NewServer(
     grpc.ChainUnaryInterceptor(
-        policyoption.Interceptor, // 必ず先頭に置く
+        policyoption.Interceptor( // 必ず先頭に置く
+            policyoption.WithLogLevel(slog.LevelError), // オプション: ログレベル（デフォルト: LevelError）
+        ),
         // ... 他のインターセプター
     ),
 )
@@ -74,11 +79,18 @@ if ok {
 - **対応フィールド型**: スカラー型（`string`, `bytes`, `int32/64`, `uint32/64`, `bool`）のみ対応しています。`repeated` フィールドや `map` フィールド、ネストしたメッセージ型はサポートしていません。
 - **`field_mappings` のバリデーション**: `placeholder` または `request_field` が空文字の場合はリクエスト処理が `Internal` エラーで終了します。
 
+## オプション一覧
+
+| オプション | 説明 | デフォルト |
+| --- | --- | --- |
+| `WithLogLevel(slog.Level)` | ログ出力レベルを設定する | `slog.LevelError` |
+
 ## パッケージ構成
 
 ```text
 protobuf_policy_option/
 ├── interceptor.go         # gRPC インターセプター本体
+├── logger.go              # ログレベル制御
 └── schema/
     ├── policy.proto       # Policy / FieldMapping メッセージ定義
     └── policy.pb.go       # protoc-gen-go 生成コード

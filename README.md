@@ -30,18 +30,27 @@ authorization.go/
 
 ```go
 import (
-    policyoption      "github.com/o3co/authorization.go/protobuf_policy_option"
+    "log/slog"
+    policyoption       "github.com/o3co/authorization.go/protobuf_policy_option"
     policyverification "github.com/o3co/authorization.go/policy_verification"
-    pvclient          "github.com/o3co/authorization.go/policy_verification/client"
+    pvclient           "github.com/o3co/authorization.go/policy_verification/client"
 )
 
-verifier, err := pvclient.NewVerifierClient(httpClient, "http://auth-service/")
+verifier, err := pvclient.NewVerifierClient(
+    httpClient,
+    "http://auth-service/",
+    pvclient.WithLogLevel(slog.LevelError), // デフォルト: LevelError
+)
 if err != nil { ... }
 
 grpc.NewServer(
     grpc.ChainUnaryInterceptor(
-        policyoption.Interceptor,                    // [1] ポリシー解決
-        policyverification.Interceptor(verifier),    // [2] 認可チェック
+        policyoption.Interceptor(
+            policyoption.WithLogLevel(slog.LevelError), // デフォルト: LevelError
+        ),
+        policyverification.Interceptor(verifier,
+            policyverification.WithLogLevel(slog.LevelError), // デフォルト: LevelError
+        ),
     ),
 )
 ```

@@ -25,13 +25,16 @@ go get github.com/o3co/authorization.go/policy_verification
 ### 1. `VerifierClient` を生成する
 
 ```go
-import pvclient "github.com/o3co/authorization.go/policy_verification/client"
+import (
+    "log/slog"
+    pvclient "github.com/o3co/authorization.go/policy_verification/client"
+)
 
 verifier, err := pvclient.NewVerifierClient(
     &http.Client{Timeout: 5 * time.Second},
     "http://auth-service/",
-    // オプション: レスポンスボディの最大読み取りサイズ（デフォルト 1MB）
-    pvclient.WithMaxResponseBodySize(512 * 1024),
+    pvclient.WithLogLevel(slog.LevelError),       // オプション: ログレベル（デフォルト: LevelError）
+    pvclient.WithMaxResponseBodySize(512 * 1024), // オプション: レスポンスボディの最大読み取りサイズ（デフォルト 1MB）
 )
 if err != nil { ... }
 ```
@@ -42,14 +45,19 @@ if err != nil { ... }
 
 ```go
 import (
-    policyoption      "github.com/o3co/authorization.go/protobuf_policy_option"
+    "log/slog"
+    policyoption       "github.com/o3co/authorization.go/protobuf_policy_option"
     policyverification "github.com/o3co/authorization.go/policy_verification"
 )
 
 grpc.NewServer(
     grpc.ChainUnaryInterceptor(
-        policyoption.Interceptor,                    // [1] ポリシー解決（必ず先に登録）
-        policyverification.Interceptor(verifier),    // [2] 認可チェック
+        policyoption.Interceptor(                         // [1] ポリシー解決（必ず先に登録）
+            policyoption.WithLogLevel(slog.LevelError),
+        ),
+        policyverification.Interceptor(verifier,          // [2] 認可チェック
+            policyverification.WithLogLevel(slog.LevelError),
+        ),
     ),
 )
 ```
@@ -75,16 +83,33 @@ Authorization: <gRPC メタデータの Authorization ヘッダをそのまま�
 
 ## 注意点
 
-- **インターセプターの順序**: `protobuf_policy_option.Interceptor` を必ず **前** に登録してください。Context にポリシーが存在しない場合（`protobuf_policy_option` が未登録など）、このインターセプターは認可チェックをスキップしてリクエストを素通りさせます。
+- **インターセプターの順序**: `protobuf_policy_option.Interceptor` を必ず **前** に登録してください。未登録の場合、全リクエストに対して `Internal` エラーを返します。
 - **`Authorization` ヘッダ必須**: gRPC メタデータに `Authorization` ヘッダが存在しない場合は `Unauthenticated` エラーを返します。クライアントは必ずトークンを付与してください。
 - **認可サーバーの可用性**: 認可サーバーが応答しない場合はネットワークエラーとして `Internal` エラーになります。認可サーバーの SLA がサービス全体の可用性に直接影響するため、タイムアウトの設定を適切に行ってください。
 - **レスポンスボディの非公開**: 認可サーバーのエラーレスポンスボディはログに出力しますが、gRPC クライアントへは返しません。内部情報の漏洩を防ぐためです。
+
+## オプション一覧
+
+### `Interceptor`
+
+| オプション | 説明 | デフォルト |
+| --- | --- | --- |
+| `WithLogLevel(slog.Level)` | ログ出力レベルを設定する | `slog.LevelError` |
+
+### `NewVerifierClient`
+
+| オプション | 説明 | デフォルト |
+| --- | --- | --- |
+| `WithLogLevel(slog.Level)` | ログ出力レベルを設定する | `slog.LevelError` |
+| `WithMaxResponseBodySize(int64)` | レスポンスボディの最大読み取りサイズ（バイト） | `1048576`（1MB） |
 
 ## パッケージ構成
 
 ```text
 policy_verification/
 ├── interceptor.go     # gRPC インターセプター本体
+├── logger.go          # ログレベル制御
 └── client/
-    └── verifier.go    # 認可サーバーへの HTTP クライアント
+    ├── verifier.go    # 認可サーバーへの HTTP クライアント
+    └── logger.go      # ログレベル制御
 ```
