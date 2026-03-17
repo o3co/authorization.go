@@ -22,7 +22,10 @@ import (
 
 type ctxKey string
 
-const ctxKeyPolicy ctxKey = "policy"
+const (
+	ctxKeyPolicy         ctxKey = "o3:policy"
+	ctxKeyInterceptorRan ctxKey = "o3:interceptor_ran"
+)
 
 type Policy struct {
 	Resource string
@@ -34,6 +37,17 @@ func WithPolicy(ctx context.Context, resource, action string) context.Context {
 		Resource: resource,
 		Action:   action,
 	})
+}
+
+// markInterceptorRan Interceptor が実行されたことを ctx に記録する（内部用）
+func markInterceptorRan(ctx context.Context) context.Context {
+	return context.WithValue(ctx, ctxKeyInterceptorRan, true)
+}
+
+// InterceptorRanFromContext protobuf_policy_option.Interceptor が実行済みかどうかを返す。
+// policy_verification.Interceptor でチェーンの設定ミスを検出するために使用する。
+func InterceptorRanFromContext(ctx context.Context) bool {
+	return ctx.Value(ctxKeyInterceptorRan) != nil
 }
 
 func PolicyFromContext(ctx context.Context) (*Policy, bool) {
@@ -65,6 +79,9 @@ func Interceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInf
 		log.Printf("[interceptor] failed to get method policy: %v", err)
 		return nil, status.Errorf(codes.Internal, "failed to get method policy: %v", err)
 	}
+
+	// Interceptor が実行されたことを常にマーク（policy_verification 側でチェーン設定ミスを検出するため）
+	ctx = markInterceptorRan(ctx)
 
 	if policy == nil {
 		// 権限定義なし、継続
