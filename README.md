@@ -5,7 +5,7 @@ gRPC サーバー向けの認可ミドルウェアライブラリです。Protob
 ## モジュール構成
 
 ```text
-authorization.go/
+grpc.authz/
 ├── protobuf_policy_option/   # Protobuf オプションからポリシーを解析し Context に注入
 └── policy_verification/      # Context のポリシーを使って認可サーバーへ検証リクエストを送信
 ```
