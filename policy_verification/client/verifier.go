@@ -16,32 +16,69 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// PermissionVerifierClient 認可チェックを行うクライアント
-type PermissionVerifierClient interface {
+// VerifierClient 認可チェックを行うクライアント
+type VerifierClient interface {
 	Verify(ctx context.Context, resource, action string) error
 }
 
-// PermissionVerifierClient 認可クライアントの実装
-type permissionVerifierClient struct {
-	httpClient *http.Client
-	baseURL    string
-}
+const defaultMaxResponseBodySize int64 = 1024 * 1024 // 1MB
 
-// NewPermissionVerifierClient 認可クライアントのコンストラクタ
-func NewPermissionVerifierClient(httpClient *http.Client, baseURL string) PermissionVerifierClient {
-	return &permissionVerifierClient{
-		httpClient: httpClient,
-		baseURL:    baseURL,
+// Option verifierClient の設定オプション
+type Option func(*verifierClient)
+
+// WithMaxResponseBodySize レスポンスボディの最大読み取りサイズを設定する（バイト単位）
+func WithMaxResponseBodySize(size int64) Option {
+	return func(c *verifierClient) {
+		c.maxResponseBodySize = size
 	}
 }
 
-type Token struct {
-	TokenType string `json:"tokenType"`
-	Value     string `json:"value"`
+// verifierClient 認可クライアントの実装
+type verifierClient struct {
+	httpClient          *http.Client
+	verifyURL           string
+	maxResponseBodySize int64
 }
 
-// GetToken gRPCメタデータからAuthorizationトークンを取得
-func GetToken(ctx context.Context) (*Token, error) {
+// NewVerifierClient 認可クライアントのコンストラクタ
+// baseURL が不正な場合はエラーを返す。
+func NewVerifierClient(httpClient *http.Client, baseURL string, opts ...Option) (VerifierClient, error) {
+	rawBase := strings.TrimSpace(baseURL)
+	if rawBase == "" {
+		return nil, fmt.Errorf("baseURL must not be empty")
+	}
+
+	if !strings.HasPrefix(rawBase, "http://") && !strings.HasPrefix(rawBase, "https://") {
+		rawBase = "http://" + rawBase
+	}
+
+	base, err := url.Parse(rawBase)
+	if err != nil {
+		return nil, fmt.Errorf("invalid authorization base url: %w", err)
+	}
+
+	base.Path = strings.TrimSuffix(base.Path, "/") + "/verify"
+	verifyURL := base.String()
+
+	c := &verifierClient{
+		httpClient:          httpClient,
+		verifyURL:           verifyURL,
+		maxResponseBodySize: defaultMaxResponseBodySize,
+	}
+	for _, opt := range opts {
+		opt(c)
+	}
+
+	return c, nil
+}
+
+type Token struct {
+	TokenType string
+	Value     string
+}
+
+// getToken gRPCメタデータからAuthorizationトークンを取得
+func getToken(ctx context.Context) (*Token, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
 
 	if !ok {
@@ -68,9 +105,9 @@ func GetToken(ctx context.Context) (*Token, error) {
 }
 
 // Verify 権限チェックを実行
-func (c *permissionVerifierClient) Verify(ctx context.Context, resource, action string) error {
+func (c *verifierClient) Verify(ctx context.Context, resource, action string) error {
 	// --- 認可トークン取得 -------------------------------------------------
-	token, err := GetToken(ctx)
+	token, err := getToken(ctx)
 
 	if err != nil {
 		return status.Errorf(codes.Unauthenticated, "failed to get authorization token: %v", err)
@@ -86,30 +123,9 @@ func (c *permissionVerifierClient) Verify(ctx context.Context, resource, action 
 		return status.Errorf(codes.Internal, "failed to marshal request body: %v", err)
 	}
 
-	// --- エンドポイント URL の組み立て -------------------------------------
-	// base URL とパスを安全に結合して /verify エンドポイントを作る。
-	// 単純な文字列連結だとスラッシュの有無で壊れるため、url.ResolveReference を使う。
-	// ただし base URL にスキームが含まれていない場合（例: "localhost:8080"）
-	// url.Parse はスキーム無しの URL として扱うため、ResolveReference が
-	// 不正な結果 (例: "localhost:///verify") を返すことがある。
-	// そのため明示的にスキームを補完する。
-	rawBase := strings.TrimSpace(c.baseURL)
-
-	if rawBase != "" && !strings.HasPrefix(rawBase, "http://") && !strings.HasPrefix(rawBase, "https://") {
-		rawBase = "http://" + rawBase
-	}
-
-	base, err := url.Parse(rawBase)
-
-	if err != nil {
-		return status.Errorf(codes.Internal, "invalid authorization base url: %v", err)
-	}
-
-	verifyURL := base.ResolveReference(&url.URL{Path: "/verify"}).String()
-
 	// --- HTTP リクエスト作成 -----------------------------------------------
 	// Context を紐付けたリクエストを作成することで、呼び出し元のキャンセルやタイムアウトを継承する。
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, verifyURL, bytes.NewReader(jsonData))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.verifyURL, bytes.NewReader(jsonData))
 
 	if err != nil {
 		return status.Errorf(codes.Internal, "failed to create request: %v", err)
@@ -131,8 +147,11 @@ func (c *permissionVerifierClient) Verify(ctx context.Context, resource, action 
 	// レスポンスボディは必ず Close する（リソースリーク防止）。
 	defer resp.Body.Close()
 
-	// ボディを読み出してログに出力（デバッグに有用）。読み取り失敗は無視して続行。
-	respBody, _ := io.ReadAll(resp.Body)
+	// ボディを最大 maxResponseBodySize バイトまで読み出す（メモリ保護）。
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, c.maxResponseBodySize))
+	if err != nil {
+		log.Printf("[AuthClient] failed to read response body: %v", err)
+	}
 	log.Printf("[AuthClient] response status: %d", resp.StatusCode)
 
 	// レスポンスボディは常にフルで出力せず、エラー時のみかつ長さを制限してログに出す。
@@ -161,5 +180,6 @@ func (c *permissionVerifierClient) Verify(ctx context.Context, resource, action 
 	}
 
 	// その他は内部エラーとして扱い、レスポンスボディを含めて原因追跡をしやすくする。
-	return status.Errorf(codes.Internal, "authorization service error: %d, body: %s", resp.StatusCode, string(respBody))
+	log.Printf("[AuthClient] authorization service error: status code %d, response body: %s", resp.StatusCode, string(respBody))
+	return status.Errorf(codes.Internal, "authorization service error: %d, body: %s", resp.StatusCode, "Failed to verify policy")
 }

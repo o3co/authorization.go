@@ -1,4 +1,4 @@
-package intercepter
+package interceptor
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 )
 
 // Interceptor 認可チェックを行うインターセプター
-func Interceptor(permissionVerifierClient client.PermissionVerifierClient) grpc.UnaryServerInterceptor {
+func Interceptor(verifierClient client.VerifierClient) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		log.Printf("[interceptor] processing method: %s", info.FullMethod)
 
@@ -31,7 +31,7 @@ func Interceptor(permissionVerifierClient client.PermissionVerifierClient) grpc.
 		log.Printf("[authorizationInterceptor] Action: %s", action)
 
 		// 認可チェック実行（クライアントはstatusエラーを返す設計）
-		if err := permissionVerifierClient.Verify(ctx, resource, action); err != nil {
+		if err := verifierClient.Verify(ctx, resource, action); err != nil {
 			log.Printf("[authorizationInterceptor] authorization check failed: %v", err)
 
 			return nil, err

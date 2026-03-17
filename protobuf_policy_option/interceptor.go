@@ -1,4 +1,4 @@
-package intercepter
+package interceptor
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	"google.golang.org/grpc"
@@ -116,120 +117,102 @@ func parseFullMethodName(fullMethodName string) (RPCMethod, error) {
 	return RPCMethod{Service: serviceName, Method: methodName}, nil
 }
 
+// cachedPolicy は methodPolicyCache に格納するラッパー。
+// policy == nil は「ポリシーなし」を意味し、キャッシュ未登録と区別する。
+type cachedPolicy struct {
+	policy *pb.Policy
+}
+
+// methodPolicyCache はフルメソッド名 -> *cachedPolicy のキャッシュ。
+// GlobalFiles のスキャンはリクエストごとに行わず、初回のみ実行する。
+var methodPolicyCache sync.Map
+
 // GetMethodPolicy protobufメソッドから権限情報を取得
 func GetMethodPolicy(fullMethodName string) (*pb.Policy, error) {
-	// "/sample.v1.SampleService/SearchSamples" -> RPCMethod{Service: "sample.v1.SampleService", Method: "SearchSamples"}
-	mm, err := parseFullMethodName(fullMethodName)
+	// キャッシュヒット確認（2回目以降はスキャン不要）
+	if v, ok := methodPolicyCache.Load(fullMethodName); ok {
+		return v.(*cachedPolicy).policy, nil
+	}
 
+	policy, err := lookupMethodPolicy(fullMethodName)
 	if err != nil {
 		return nil, err
 	}
 
+	// nil も含めてキャッシュに登録
+	methodPolicyCache.Store(fullMethodName, &cachedPolicy{policy: policy})
+	return policy, nil
+}
+
+// lookupMethodPolicy GlobalFiles をスキャンしてポリシーを解決する。
+// GetMethodPolicy から初回のみ呼ばれる。
+func lookupMethodPolicy(fullMethodName string) (*pb.Policy, error) {
+	mm, err := parseFullMethodName(fullMethodName)
+	if err != nil {
+		return nil, err
+	}
 	serviceName, methodName := mm.Service, mm.Method
 
-	//.protoファイルで定義されたサービス（例：SampleService）のメタ情報を保持するオブジェクトです。
 	var serviceDesc protoreflect.ServiceDescriptor
-
-	log.Printf("[GetMethodPolicy] 探しているサービス名: %s", serviceName)
-
-	//Protocol Buffersの.protoファイル1つ分のメタ情報を表すインターフェース
-	//1つの.protoファイル（例：sample.proto）全体の情報を保持するオブジェクト
 	protoregistry.GlobalFiles.RangeFiles(func(fd protoreflect.FileDescriptor) bool {
-		log.Printf("[GetMethodPolicy] .protoファイルをチェック中: %s", fd.Path())
-
-		// 各ファイルで定義されているサービス一覧を取得
-		// Services{{Name: ServerReflection, Methods: [{Name: ServerReflectionInfo, Input: grpc.reflection.v1.ServerReflectionRequest, Output: grpc.reflection.v1.ServerReflectionResponse, IsStreamingClient: true, IsStreamingServer: true}]}}
 		services := fd.Services()
-
-		log.Printf("[GetMethodPolicy] このファイル内のサービス数: %d", services.Len())
-
 		for i := 0; i < services.Len(); i++ {
-			// i番目のサービスを取得
 			svc := services.Get(i)
-
-			svcName := string(svc.FullName())
-
-			log.Printf("[GetMethodPolicy] 発見したサービス [%d]: %s", i, svcName)
-
-			// サービス名が一致するかチェック
-			if svcName == serviceName {
-				log.Printf("[GetMethodPolicy] 🎯 サービスが見つかりました！ %s", svcName)
-
+			if string(svc.FullName()) == serviceName {
 				serviceDesc = svc
-				return false // 見つかったので停止
+				return false // 発見したので停止
 			}
 		}
-
-		log.Printf("[GetMethodPolicy] このファイルには目的のサービスがありません、次へ...")
-		return true // 継続
+		return true // 次のファイルへ
 	})
 
 	if serviceDesc == nil {
-		log.Printf("[GetMethodPolicy] サービスディスクリプターが見つかりませんでした")
-		return nil, fmt.Errorf("service descriptor not found for %s", serviceName)
+		return nil, nil
 	}
 
-	log.Printf("[GetMethodPolicy] サービスディスクリプター: %s", serviceDesc.FullName())
-	// メソッドディスクリプターを取得
 	methodDesc := serviceDesc.Methods().ByName(protoreflect.Name(methodName))
-
 	if methodDesc == nil {
-		log.Printf("[GetMethodPolicy] メソッドディスクリプターが見つかりませんでした: %s", methodName)
-		return nil, fmt.Errorf("method %s not found in service %s", methodName, serviceName)
+		return nil, nil
 	}
 
-	log.Printf("[GetMethodPolicy] メソッドディスクリプター: %s", methodDesc.FullName())
-
-	// メソッドオプションを取得
 	opts := methodDesc.Options()
-
 	if opts == nil {
-		return nil, nil // オプションが設定されていない
+		return nil, nil
 	}
 
 	methodOptions, ok := opts.(*descriptorpb.MethodOptions)
-
 	if !ok {
-		log.Printf("[GetMethodPolicy] 内部エラー: 予期しないメソッドオプション型: %T", opts)
 		return nil, fmt.Errorf("internal error: unexpected method options type %T", opts)
 	}
 
-	log.Printf("[GetMethodPolicy] メソッドオプション: %v", methodOptions)
-	// カスタムpermissionオプションを抽出
-	// 拡張が存在するかチェック
 	if proto.HasExtension(methodOptions, pb.E_Policy) {
-		//拡張の値を取得
 		ext := proto.GetExtension(methodOptions, pb.E_Policy)
-
-		// 型アサーションでPermission型に変換
 		if permission, ok := ext.(*pb.Policy); ok {
+			log.Printf("[GetMethodPolicy] policy found for %s: resource=%s action=%s", fullMethodName, permission.Resource, permission.Action)
 			return permission, nil
 		}
 	}
 
-	return nil, nil // permissionオプションが設定されていない
+	return nil, nil
 }
 
 // resolveResourceFromRequest リソースを解決 (policy とリクエストからプレースホルダを置換)
 func resolveResourceFromRequest(policy *pb.Policy, req interface{}) (*Policy, error) {
-	// permissionがnilの場合は解決できないのでnilを返す
-	if policy == nil {
-		return nil, nil
-	}
-
 	resource := policy.Resource
 
 	log.Printf("[resolveResourceFromRequest] original resource template: %s", resource)
 
 	// resource_fieldsでテンプレート置換
 	for _, field := range policy.FieldMappings {
+		if field.Placeholder == "" || field.RequestField == "" {
+			return nil, fmt.Errorf("invalid field mapping: placeholder and request_field must not be empty")
+		}
+
 		// プレースホルダーの形式は "<field_name>" とする
 		placeholder := fmt.Sprintf("<%s>", field.Placeholder)
 
 		//リソーステンプレートに該当するプレースホルダーが含まれているかチェック
 		if strings.Contains(resource, placeholder) {
-			var value string
-
 			value, err := extractFieldFromRequest(req, field.RequestField)
 
 			if err != nil {
@@ -238,7 +221,7 @@ func resolveResourceFromRequest(policy *pb.Policy, req interface{}) (*Policy, er
 				return nil, fmt.Errorf("failed to extract field %s: %v", field.RequestField, err)
 			}
 
-			resource = strings.Replace(resource, placeholder, value, -1)
+			resource = strings.ReplaceAll(resource, placeholder, value)
 		}
 	}
 
@@ -264,10 +247,6 @@ func extractFieldFromRequest(req interface{}, fieldPath string) (string, error) 
 			return "", fmt.Errorf("field %s not found in request", fieldPath)
 		}
 
-		if !m.Has(fd) {
-			return "", fmt.Errorf("field %s is not set in request", fieldPath)
-		}
-
 		val := m.Get(fd)
 
 		// list/mapは未対応
@@ -290,7 +269,8 @@ func extractFieldFromRequest(req interface{}, fieldPath string) (string, error) 
 		case protoreflect.Int32Kind, protoreflect.Sint32Kind, protoreflect.Sfixed32Kind,
 			protoreflect.Int64Kind, protoreflect.Sint64Kind, protoreflect.Sfixed64Kind:
 			return fmt.Sprintf("%d", val.Int()), nil
-		case protoreflect.Uint32Kind, protoreflect.Uint64Kind:
+		case protoreflect.Uint32Kind, protoreflect.Uint64Kind,
+			protoreflect.Fixed32Kind, protoreflect.Fixed64Kind:
 			return fmt.Sprintf("%d", val.Uint()), nil
 		case protoreflect.BoolKind:
 			return fmt.Sprintf("%v", val.Bool()), nil
@@ -300,5 +280,5 @@ func extractFieldFromRequest(req interface{}, fieldPath string) (string, error) 
 		}
 	}
 
-	return "", fmt.Errorf("field %s not found in request", fieldPath)
+	return "", fmt.Errorf("request does not implement proto.Message (got %T)", req)
 }
