@@ -31,7 +31,7 @@ import (
 	"google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/types/descriptorpb"
 
-	pb "github.com/o3co/authorization.go/protobuf_policy_option/schema"
+	pb "grpc.authorization.go/protobuf_policy_option/schema"
 )
 
 type ctxKey string

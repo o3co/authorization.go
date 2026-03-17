@@ -1,4 +1,4 @@
-module github.com/o3co/authorization.go/protobuf_policy_option
+module grpc.authorization.go/protobuf_policy_option
 
 go 1.25.5
 
