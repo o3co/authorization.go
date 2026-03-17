@@ -43,6 +43,10 @@ type verifierClient struct {
 // NewVerifierClient 認可クライアントのコンストラクタ
 // baseURL が不正な場合はエラーを返す。
 func NewVerifierClient(httpClient *http.Client, baseURL string, opts ...Option) (VerifierClient, error) {
+	if httpClient == nil {
+		return nil, fmt.Errorf("httpClient must not be nil")
+	}
+
 	rawBase := strings.TrimSpace(baseURL)
 	if rawBase == "" {
 		return nil, fmt.Errorf("baseURL must not be empty")
@@ -72,13 +76,13 @@ func NewVerifierClient(httpClient *http.Client, baseURL string, opts ...Option) 
 	return c, nil
 }
 
-type Token struct {
+type token struct {
 	TokenType string
 	Value     string
 }
 
 // getToken gRPCメタデータからAuthorizationトークンを取得
-func getToken(ctx context.Context) (*Token, error) {
+func getToken(ctx context.Context) (*token, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
 
 	if !ok {
@@ -92,22 +96,22 @@ func getToken(ctx context.Context) (*Token, error) {
 		return nil, fmt.Errorf("no authorization header found")
 	}
 
-	token := values[0]
+	raw := values[0]
 
-	parts := strings.Fields(token)
+	parts := strings.Fields(raw)
 	if len(parts) < 2 {
 		return nil, fmt.Errorf("invalid authorization header format")
 	}
 
 	tokenType := parts[0]
 	tokenValue := parts[1]
-	return &Token{TokenType: tokenType, Value: tokenValue}, nil
+	return &token{TokenType: tokenType, Value: tokenValue}, nil
 }
 
 // Verify 権限チェックを実行
 func (c *verifierClient) Verify(ctx context.Context, resource, action string) error {
 	// --- 認可トークン取得 -------------------------------------------------
-	token, err := getToken(ctx)
+	tok, err := getToken(ctx)
 
 	if err != nil {
 		return status.Errorf(codes.Unauthenticated, "failed to get authorization token: %v", err)
@@ -134,7 +138,7 @@ func (c *verifierClient) Verify(ctx context.Context, resource, action string) er
 	// 必要なヘッダをセット
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", token.TokenType+" "+token.Value) // JWT を Authorization ヘッダで送信
+	req.Header.Set("Authorization", tok.TokenType+" "+tok.Value) // JWT を Authorization ヘッダで送信
 
 	// --- リクエスト送信 ---------------------------------------------------
 	resp, err := c.httpClient.Do(req)
@@ -148,9 +152,11 @@ func (c *verifierClient) Verify(ctx context.Context, resource, action string) er
 	defer resp.Body.Close()
 
 	// ボディを最大 maxResponseBodySize バイトまで読み出す（メモリ保護）。
+	// 読み取りに失敗した場合は部分データを捨て、空として扱う。
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, c.maxResponseBodySize))
 	if err != nil {
 		log.Printf("[AuthClient] failed to read response body: %v", err)
+		respBody = nil
 	}
 	log.Printf("[AuthClient] response status: %d", resp.StatusCode)
 

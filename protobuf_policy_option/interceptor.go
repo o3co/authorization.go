@@ -1,4 +1,4 @@
-package interceptor
+package policyoption
 
 import (
 	"context"
@@ -32,7 +32,7 @@ type Policy struct {
 	Action   string
 }
 
-func WithPolicy(ctx context.Context, resource, action string) context.Context {
+func withPolicy(ctx context.Context, resource, action string) context.Context {
 	return context.WithValue(ctx, ctxKeyPolicy, &Policy{
 		Resource: resource,
 		Action:   action,
@@ -62,8 +62,8 @@ func PolicyFromContext(ctx context.Context) (*Policy, bool) {
 	return pm, ok
 }
 
-// RPCMethod は gRPC のフルメソッド名を分解した構造体
-type RPCMethod struct {
+// rpcMethod は gRPC のフルメソッド名を分解した構造体
+type rpcMethod struct {
 	Service string
 	Method  string
 }
@@ -73,7 +73,7 @@ func Interceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInf
 	log.Printf("[interceptor] processing method: %s", info.FullMethod)
 
 	// protobufからpermissionを取得
-	policy, err := GetMethodPolicy(info.FullMethod)
+	policy, err := getMethodPolicy(info.FullMethod)
 
 	if err != nil {
 		log.Printf("[interceptor] failed to get method policy: %v", err)
@@ -97,20 +97,20 @@ func Interceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInf
 		return nil, status.Errorf(codes.Internal, "resource resolved failed: %v", err)
 	}
 
-	ctx = WithPolicy(ctx, resolvedResource.Resource, resolvedResource.Action)
+	ctx = withPolicy(ctx, resolvedResource.Resource, resolvedResource.Action)
 
 	return handler(ctx, req)
 }
 
 // フルメソッド名からサービスとメソッドを分解して取得する関数
-func parseFullMethodName(fullMethodName string) (RPCMethod, error) {
+func parseFullMethodName(fullMethodName string) (rpcMethod, error) {
 	// fullMethodName は gRPC のフルメソッド名で、
 	// 形式は "/<package>.<Service>/<Method>" です。
 	// 例: "/sample.v1.SampleService/SearchSamples"
 
 	// 空文字または先頭が '/' でない場合は形式が不正
 	if len(fullMethodName) == 0 || fullMethodName[0] != '/' {
-		return RPCMethod{}, fmt.Errorf("invalid full method format: %s", fullMethodName)
+		return rpcMethod{}, fmt.Errorf("invalid full method format: %s", fullMethodName)
 	}
 
 	// 先頭の '/' を除去して実際の文字列部分を取り出す
@@ -121,7 +121,7 @@ func parseFullMethodName(fullMethodName string) (RPCMethod, error) {
 	// パッケージやサービス名に '/' は含まれない前提のため、最後の '/' を使う
 	lastSlash := strings.LastIndex(method, "/")
 	if lastSlash == -1 {
-		return RPCMethod{}, fmt.Errorf("invalid full method format: %s", fullMethodName)
+		return rpcMethod{}, fmt.Errorf("invalid full method format: %s", fullMethodName)
 	}
 
 	// 最後の '/' の 左側がサービス名、右側がメソッド名
@@ -131,34 +131,34 @@ func parseFullMethodName(fullMethodName string) (RPCMethod, error) {
 	methodName := method[lastSlash+1:]
 
 	// 分割した値を構造体で返す
-	return RPCMethod{Service: serviceName, Method: methodName}, nil
+	return rpcMethod{Service: serviceName, Method: methodName}, nil
 }
 
 // cachedPolicy は methodPolicyCache に格納するラッパー。
 // policy == nil は「ポリシーなし」を意味し、キャッシュ未登録と区別する。
+// err を持たせることでエラー結果もキャッシュし、再スキャンを防ぐ。
 type cachedPolicy struct {
 	policy *pb.Policy
+	err    error
 }
 
 // methodPolicyCache はフルメソッド名 -> *cachedPolicy のキャッシュ。
 // GlobalFiles のスキャンはリクエストごとに行わず、初回のみ実行する。
 var methodPolicyCache sync.Map
 
-// GetMethodPolicy protobufメソッドから権限情報を取得
-func GetMethodPolicy(fullMethodName string) (*pb.Policy, error) {
+// getMethodPolicy protobufメソッドから権限情報を取得
+func getMethodPolicy(fullMethodName string) (*pb.Policy, error) {
 	// キャッシュヒット確認（2回目以降はスキャン不要）
 	if v, ok := methodPolicyCache.Load(fullMethodName); ok {
-		return v.(*cachedPolicy).policy, nil
+		c := v.(*cachedPolicy)
+		return c.policy, c.err
 	}
 
 	policy, err := lookupMethodPolicy(fullMethodName)
-	if err != nil {
-		return nil, err
-	}
 
-	// nil も含めてキャッシュに登録
-	methodPolicyCache.Store(fullMethodName, &cachedPolicy{policy: policy})
-	return policy, nil
+	// エラーも含めてキャッシュに登録（再スキャン防止）
+	methodPolicyCache.Store(fullMethodName, &cachedPolicy{policy: policy, err: err})
+	return policy, err
 }
 
 // lookupMethodPolicy GlobalFiles をスキャンしてポリシーを解決する。
