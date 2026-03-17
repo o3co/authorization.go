@@ -1,0 +1,11 @@
+# --- Go / build artifacts ---
+# Binaries for programs and plugins
+/*.exe
+/*.dll
+/*.so
+/*.dylib
+/*.test
+/*.out
+
+# --- OS files ---
+.DS_Store
