@@ -1,4 +1,4 @@
-package interceptor
+package policyverification
 
 import (
 	"context"
@@ -29,6 +29,10 @@ func WithLogLevel(level slog.Level) Option {
 
 // Interceptor 認可チェックを行うインターセプター
 func Interceptor(verifierClient client.VerifierClient, opts ...Option) grpc.UnaryServerInterceptor {
+	if verifierClient == nil {
+		panic("verifierClient must not be nil")
+	}
+
 	cfg := &config{logLevel: slog.LevelError}
 	for _, opt := range opts {
 		opt(cfg)
@@ -41,6 +45,7 @@ func Interceptor(verifierClient client.VerifierClient, opts ...Option) grpc.Unar
 		// protobuf_policy_option.Interceptor が実行済みかチェック
 		// 未登録の場合はチェーン設定ミスとして Internal エラーを返す
 		if !policy.InterceptorRanFromContext(ctx) {
+			log.Error("interceptor chain misconfiguration: protobuf_policy_option.Interceptor is not registered")
 			return nil, status.Error(codes.Internal,
 				"protobuf_policy_option.Interceptor is not registered in the interceptor chain")
 		}

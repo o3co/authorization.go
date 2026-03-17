@@ -91,11 +91,13 @@ func Interceptor(opts ...Option) grpc.UnaryServerInterceptor {
 	}
 	log := newLogger(cfg.logLevel)
 
+	var cache sync.Map // インターセプターインスタンスごとのキャッシュ（テスト間の汚染を防ぐ）
+
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		log.Debug("processing method", "method", info.FullMethod)
 
 		// protobufからpermissionを取得
-		policy, err := getMethodPolicy(log, info.FullMethod)
+		policy, err := getMethodPolicy(&cache, log, info.FullMethod)
 
 		if err != nil {
 			log.Error("failed to get method policy", "method", info.FullMethod, "error", err)
@@ -166,14 +168,10 @@ type cachedPolicy struct {
 	err    error
 }
 
-// methodPolicyCache はフルメソッド名 -> *cachedPolicy のキャッシュ。
-// GlobalFiles のスキャンはリクエストごとに行わず、初回のみ実行する。
-var methodPolicyCache sync.Map
-
 // getMethodPolicy protobufメソッドから権限情報を取得
-func getMethodPolicy(log *slog.Logger, fullMethodName string) (*pb.Policy, error) {
+func getMethodPolicy(cache *sync.Map, log *slog.Logger, fullMethodName string) (*pb.Policy, error) {
 	// キャッシュヒット確認（2回目以降はスキャン不要）
-	if v, ok := methodPolicyCache.Load(fullMethodName); ok {
+	if v, ok := cache.Load(fullMethodName); ok {
 		c := v.(*cachedPolicy)
 		return c.policy, c.err
 	}
@@ -181,7 +179,7 @@ func getMethodPolicy(log *slog.Logger, fullMethodName string) (*pb.Policy, error
 	policy, err := lookupMethodPolicy(log, fullMethodName)
 
 	// エラーも含めてキャッシュに登録（再スキャン防止）
-	methodPolicyCache.Store(fullMethodName, &cachedPolicy{policy: policy, err: err})
+	cache.Store(fullMethodName, &cachedPolicy{policy: policy, err: err})
 	return policy, err
 }
 
@@ -239,6 +237,13 @@ func lookupMethodPolicy(log *slog.Logger, fullMethodName string) (*pb.Policy, er
 
 // resolveResourceFromRequest リソースを解決 (policy とリクエストからプレースホルダを置換)
 func resolveResourceFromRequest(log *slog.Logger, policy *pb.Policy, req interface{}) (*Policy, error) {
+	if policy.Resource == "" {
+		return nil, fmt.Errorf("policy resource must not be empty")
+	}
+	if policy.Action == "" {
+		return nil, fmt.Errorf("policy action must not be empty")
+	}
+
 	resource := policy.Resource
 
 	log.Debug("resolving resource template", "template", resource)

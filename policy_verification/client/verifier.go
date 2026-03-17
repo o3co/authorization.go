@@ -28,6 +28,9 @@ type Option func(*verifierClient)
 
 // WithMaxResponseBodySize レスポンスボディの最大読み取りサイズを設定する（バイト単位）
 func WithMaxResponseBodySize(size int64) Option {
+	if size <= 0 {
+		panic(fmt.Sprintf("maxResponseBodySize must be positive, got %d", size))
+	}
 	return func(c *verifierClient) {
 		c.maxResponseBodySize = size
 	}
