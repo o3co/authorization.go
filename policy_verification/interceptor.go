@@ -21,7 +21,7 @@ import (
 	"log/slog"
 	"time"
 
-	client "github.com/o3co/grpc.authz/policy_verification/client"
+	"github.com/o3co/grpc.authz/policy_verification/endpoint"
 	policy "github.com/o3co/grpc.authz/protobuf_policy_option"
 
 	"google.golang.org/grpc"
@@ -74,9 +74,9 @@ func WithLogLevel(level slog.Level) Option {
 }
 
 // Interceptor 認可チェックを行うインターセプター
-func Interceptor(verifierClient client.VerifierClient, opts ...Option) grpc.UnaryServerInterceptor {
-	if verifierClient == nil {
-		panic("verifierClient must not be nil")
+func Interceptor(verifierEndpoint endpoint.VerifierEndpoint, opts ...Option) grpc.UnaryServerInterceptor {
+	if verifierEndpoint == nil {
+		panic("verifierEndpoint must not be nil")
 	}
 
 	cfg := &config{logLevel: slog.LevelError}
@@ -87,7 +87,7 @@ func Interceptor(verifierClient client.VerifierClient, opts ...Option) grpc.Unar
 
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		requestID := extractOrGenerateRequestID(ctx)
-		ctx = client.WithRequestID(ctx, requestID)
+		ctx = endpoint.WithRequestID(ctx, requestID)
 
 		log.Debug("processing method", "method", info.FullMethod, "x-request-id", requestID)
 
@@ -101,7 +101,6 @@ func Interceptor(verifierClient client.VerifierClient, opts ...Option) grpc.Unar
 
 		// contextから解決済みポリシーメタデータを取得
 		policyData, ok := policy.PolicyFromContext(ctx)
-
 		if !ok {
 			// Interceptor は実行済みだが、このメソッドにポリシー定義がない（認可不要）
 			return handler(ctx, req)
@@ -112,10 +111,9 @@ func Interceptor(verifierClient client.VerifierClient, opts ...Option) grpc.Unar
 
 		log.Debug("verifying authorization", "resource", resource, "action", action)
 
-		// 認可チェック実行（クライアントはstatusエラーを返す設計）
-		if err := verifierClient.Verify(ctx, resource, action); err != nil {
+		// 認可チェック実行（エンドポイントは status エラーを返す設計）
+		if err := verifierEndpoint.Verify(ctx, resource, action); err != nil {
 			log.Error("authorization check failed", "resource", resource, "action", action, "error", err)
-
 			return nil, err
 		}
 
