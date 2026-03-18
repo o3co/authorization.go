@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package client
+package endpoint
 
 import (
 	"bytes"
@@ -24,54 +24,66 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
-// VerifierClient 認可チェックを行うクライアント
-type VerifierClient interface {
-	Verify(ctx context.Context, resource, action string) error
+const defaultMaxResponseBodySize int64 = 1024 * 1024 // 1MB
+const defaultTimeout = 10 * time.Second
+
+// buildConfig は NewRESTEndpoint の構築時にのみ使用する一時設定。
+// timeout など構築後に不要なフィールドをここで管理することで、
+// restO3PolicyVerifierEndpoint の struct を実行時に必要なフィールドのみに絞る。
+type buildConfig struct {
+	timeout             time.Duration
+	maxResponseBodySize int64
+	logger              *slog.Logger
 }
 
-const defaultMaxResponseBodySize int64 = 1024 * 1024 // 1MB
+// Option はo3 REST エンドポイントの設定オプション
+type Option func(*buildConfig)
 
-// Option verifierClient の設定オプション
-type Option func(*verifierClient)
+// WithTimeout HTTP クライアントのタイムアウトを設定する。未指定時のデフォルトは 10s。
+func WithTimeout(d time.Duration) Option {
+	if d <= 0 {
+		panic(fmt.Sprintf("timeout must be positive, got %v", d))
+	}
+	return func(c *buildConfig) {
+		c.timeout = d
+	}
+}
 
-// WithMaxResponseBodySize レスポンスボディの最大読み取りサイズを設定する（バイト単位）
+// WithMaxResponseBodySize レスポンスボディの最大読み取りサイズを設定する（バイト単位）。
 func WithMaxResponseBodySize(size int64) Option {
 	if size <= 0 {
 		panic(fmt.Sprintf("maxResponseBodySize must be positive, got %d", size))
 	}
-	return func(c *verifierClient) {
+	return func(c *buildConfig) {
 		c.maxResponseBodySize = size
 	}
 }
 
 // WithLogLevel ログレベルを指定する。未指定時のデフォルトは slog.LevelError。
 func WithLogLevel(level slog.Level) Option {
-	return func(c *verifierClient) {
+	return func(c *buildConfig) {
 		c.logger = newLogger(level)
 	}
 }
 
-// verifierClient 認可クライアントの実装
-type verifierClient struct {
+// restO3PolicyVerifierEndpoint は o3 独自規格の REST 認可サービスへの VerifierEndpoint 実装
+type restO3PolicyVerifierEndpoint struct {
 	httpClient          *http.Client
 	verifyURL           string
 	maxResponseBodySize int64
 	logger              *slog.Logger
 }
 
-// NewVerifierClient 認可クライアントのコンストラクタ
+// NewRESTEndpoint o3 REST 認可エンドポイントのコンストラクタ。
 // baseURL が不正な場合はエラーを返す。
-func NewVerifierClient(httpClient *http.Client, baseURL string, opts ...Option) (VerifierClient, error) {
-	if httpClient == nil {
-		return nil, fmt.Errorf("httpClient must not be nil")
-	}
-
+func NewRESTEndpoint(baseURL string, opts ...Option) (VerifierEndpoint, error) {
 	rawBase := strings.TrimSpace(baseURL)
 	if rawBase == "" {
 		return nil, fmt.Errorf("baseURL must not be empty")
@@ -87,19 +99,22 @@ func NewVerifierClient(httpClient *http.Client, baseURL string, opts ...Option) 
 	}
 
 	base.Path = strings.TrimSuffix(base.Path, "/") + "/verify"
-	verifyURL := base.String()
 
-	c := &verifierClient{
-		httpClient:          httpClient,
-		verifyURL:           verifyURL,
+	cfg := &buildConfig{
+		timeout:             defaultTimeout,
 		maxResponseBodySize: defaultMaxResponseBodySize,
 		logger:              newLogger(slog.LevelError),
 	}
 	for _, opt := range opts {
-		opt(c)
+		opt(cfg)
 	}
 
-	return c, nil
+	return &restO3PolicyVerifierEndpoint{
+		httpClient:          &http.Client{Timeout: cfg.timeout},
+		verifyURL:           base.String(),
+		maxResponseBodySize: cfg.maxResponseBodySize,
+		logger:              cfg.logger,
+	}, nil
 }
 
 type token struct {
@@ -107,111 +122,111 @@ type token struct {
 	Value     string
 }
 
-// getToken gRPCメタデータからAuthorizationトークンを取得
+// getToken gRPC incoming metadata から Authorization トークンを取得する。
 func getToken(ctx context.Context) (*token, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
-
 	if !ok {
 		return nil, fmt.Errorf("no metadata found in context")
 	}
 
-	// "authorization" キーで取得 (全て小文字になる)
 	values := md["authorization"]
-
 	if len(values) == 0 {
 		return nil, fmt.Errorf("no authorization header found")
 	}
 
-	raw := values[0]
-
-	parts := strings.Fields(raw)
+	parts := strings.Fields(values[0])
 	if len(parts) < 2 {
 		return nil, fmt.Errorf("invalid authorization header format")
 	}
 
-	tokenType := parts[0]
-	tokenValue := parts[1]
-	return &token{TokenType: tokenType, Value: tokenValue}, nil
+	return &token{TokenType: parts[0], Value: parts[1]}, nil
 }
 
-// Verify 権限チェックを実行
-func (c *verifierClient) Verify(ctx context.Context, resource, action string) error {
+// getRequestID context または gRPC incoming metadata から x-request-id を取得する。
+// context に値がある場合はそちらを優先し、なければ metadata を参照する。
+// どちらにも存在しない場合は空文字を返す。
+func getRequestID(ctx context.Context) string {
+	if v := RequestIDFromContext(ctx); v != "" {
+		return v
+	}
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return ""
+	}
+	if values := md["x-request-id"]; len(values) > 0 {
+		return values[0]
+	}
+	return ""
+}
+
+// Verify 権限チェックを実行する。
+func (e *restO3PolicyVerifierEndpoint) Verify(ctx context.Context, resource, action string) error {
 	// --- 認可トークン取得 -------------------------------------------------
 	tok, err := getToken(ctx)
-
 	if err != nil {
 		return status.Errorf(codes.Unauthenticated, "failed to get authorization token: %v", err)
 	}
 
 	// --- リクエストボディ作成 -----------------------------------------------
-	// 認可サーバーへ渡す JSON ボディを作る。
 	reqBody := map[string]string{"resource": resource, "action": action}
 	jsonData, err := json.Marshal(reqBody)
-
 	if err != nil {
-		// JSON マーシャリングに失敗したら内部エラーとして扱う。
 		return status.Errorf(codes.Internal, "failed to marshal request body: %v", err)
 	}
 
 	// --- HTTP リクエスト作成 -----------------------------------------------
 	// Context を紐付けたリクエストを作成することで、呼び出し元のキャンセルやタイムアウトを継承する。
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.verifyURL, bytes.NewReader(jsonData))
-
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, e.verifyURL, bytes.NewReader(jsonData))
 	if err != nil {
 		return status.Errorf(codes.Internal, "failed to create request: %v", err)
 	}
 
-	// 必要なヘッダをセット
+	requestID := getRequestID(ctx)
+
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", tok.TokenType+" "+tok.Value) // JWT を Authorization ヘッダで送信
+	req.Header.Set("Authorization", tok.TokenType+" "+tok.Value)
 
-	// --- リクエスト送信 ---------------------------------------------------
-	resp, err := c.httpClient.Do(req)
-
-	if err != nil {
-		// ネットワークエラーやタイムアウトなどは内部エラーとして扱う。
-		return status.Errorf(codes.Internal, "request failed: %v", err)
+	// x-request-id が存在する場合のみ転送する
+	if requestID != "" {
+		req.Header.Set("x-request-id", requestID)
 	}
 
-	// レスポンスボディは必ず Close する（リソースリーク防止）。
+	// --- リクエスト送信 ---------------------------------------------------
+	resp, err := e.httpClient.Do(req)
+	if err != nil {
+		return status.Errorf(codes.Internal, "request failed: %v", err)
+	}
 	defer resp.Body.Close()
 
 	// ボディを最大 maxResponseBodySize バイトまで読み出す（メモリ保護）。
-	// 読み取りに失敗した場合は部分データを捨て、空として扱う。
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, c.maxResponseBodySize))
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, e.maxResponseBodySize))
 	if err != nil {
-		c.logger.Error("failed to read response body", "error", err)
+		e.logger.Error("failed to read response body", "error", err, "x-request-id", requestID)
 		respBody = nil
 	}
-	c.logger.Debug("response received", "status", resp.StatusCode)
 
-	// レスポンスボディは常にフルで出力せず、エラー時のみかつ長さを制限してログに出す。
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		const maxLoggedBodySize = 1024
-		logBody := respBody
-		if len(logBody) > maxLoggedBodySize {
-			logBody = logBody[:maxLoggedBodySize]
-		}
-		c.logger.Error("error response from authorization server", "status", resp.StatusCode, "body", string(logBody))
-	}
+	e.logger.Debug("response received", "status", resp.StatusCode, "x-request-id", requestID)
+
 	// --- ステータスコードに基づく判定 -------------------------------------
-	// 2xx 系は成功として扱う。
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		return nil
 	}
 
-	// 403 は権限不足 → PermissionDenied を返す。
+	const maxLoggedBodySize = 1024
+	logBody := respBody
+	if len(logBody) > maxLoggedBodySize {
+		logBody = logBody[:maxLoggedBodySize]
+	}
+	e.logger.Error("error response from authorization server", "status", resp.StatusCode, "body", string(logBody), "x-request-id", requestID)
+
 	if resp.StatusCode == http.StatusForbidden {
 		return status.Error(codes.PermissionDenied, "access denied")
 	}
 
-	// 401 はトークン無効/期限切れ → Unauthenticated を返す。
 	if resp.StatusCode == http.StatusUnauthorized {
 		return status.Error(codes.Unauthenticated, "invalid or expired token")
 	}
 
-	// その他は内部エラーとして扱い、レスポンスボディを含めて原因追跡をしやすくする。
-	c.logger.Error("unexpected authorization service response", "status", resp.StatusCode)
-	return status.Errorf(codes.Internal, "authorization service error: %d, body: %s", resp.StatusCode, "Failed to verify policy")
+	return status.Errorf(codes.Internal, "authorization service error: %d", resp.StatusCode)
 }

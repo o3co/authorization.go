@@ -12,14 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package policyverification
+package internal
 
 import (
 	"log/slog"
-
-	"github.com/o3co/grpc.authz/policy_verification/internal"
+	"os"
 )
 
-func newLogger(level slog.Level) *slog.Logger {
-	return internal.NewLogger(level)
+func NewLogger(level slog.Level) *slog.Logger {
+	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 }

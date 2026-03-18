@@ -16,15 +16,47 @@ package policyverification
 
 import (
 	"context"
+	"crypto/rand"
+	"fmt"
 	"log/slog"
+	"time"
 
-	client "github.com/o3co/grpc.authz/policy_verification/client"
+	"github.com/o3co/grpc.authz/policy_verification/endpoint"
 	policy "github.com/o3co/grpc.authz/protobuf_policy_option"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
+
+// generateRequestID x-request-id を生成する。
+// フォーマット: YYYYMMDDHHmmss_<uuid-v4-no-dashes>
+func generateRequestID() string {
+	now := time.Now().UTC()
+	timestamp := now.Format("20060102150405")
+
+	var b [16]byte
+	_, _ = rand.Read(b[:])
+	// UUID v4: version bits
+	b[6] = (b[6] & 0x0f) | 0x40
+	// UUID v4: variant bits
+	b[8] = (b[8] & 0x3f) | 0x80
+
+	return fmt.Sprintf("%s_%x", timestamp, b)
+}
+
+// extractOrGenerateRequestID incoming metadata から x-request-id を取得し、
+// 存在しない場合は新たに生成して返す。
+func extractOrGenerateRequestID(ctx context.Context) string {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if ok {
+		if values := md["x-request-id"]; len(values) > 0 && values[0] != "" {
+			return values[0]
+		}
+	}
+	return generateRequestID()
+}
 
 // config はインターセプターの設定
 type config struct {
@@ -42,9 +74,9 @@ func WithLogLevel(level slog.Level) Option {
 }
 
 // Interceptor 認可チェックを行うインターセプター
-func Interceptor(verifierClient client.VerifierClient, opts ...Option) grpc.UnaryServerInterceptor {
-	if verifierClient == nil {
-		panic("verifierClient must not be nil")
+func Interceptor(verifierEndpoint endpoint.VerifierEndpoint, opts ...Option) grpc.UnaryServerInterceptor {
+	if verifierEndpoint == nil {
+		panic("verifierEndpoint must not be nil")
 	}
 
 	cfg := &config{logLevel: slog.LevelError}
@@ -54,7 +86,10 @@ func Interceptor(verifierClient client.VerifierClient, opts ...Option) grpc.Unar
 	log := newLogger(cfg.logLevel)
 
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		log.Debug("processing method", "method", info.FullMethod)
+		requestID := extractOrGenerateRequestID(ctx)
+		ctx = endpoint.WithRequestID(ctx, requestID)
+
+		log.Debug("processing method", "method", info.FullMethod, "x-request-id", requestID)
 
 		// protobuf_policy_option.Interceptor が実行済みかチェック
 		// 未登録の場合はチェーン設定ミスとして Internal エラーを返す
@@ -66,7 +101,6 @@ func Interceptor(verifierClient client.VerifierClient, opts ...Option) grpc.Unar
 
 		// contextから解決済みポリシーメタデータを取得
 		policyData, ok := policy.PolicyFromContext(ctx)
-
 		if !ok {
 			// Interceptor は実行済みだが、このメソッドにポリシー定義がない（認可不要）
 			return handler(ctx, req)
@@ -77,10 +111,9 @@ func Interceptor(verifierClient client.VerifierClient, opts ...Option) grpc.Unar
 
 		log.Debug("verifying authorization", "resource", resource, "action", action)
 
-		// 認可チェック実行（クライアントはstatusエラーを返す設計）
-		if err := verifierClient.Verify(ctx, resource, action); err != nil {
+		// 認可チェック実行（エンドポイントは status エラーを返す設計）
+		if err := verifierEndpoint.Verify(ctx, resource, action); err != nil {
 			log.Error("authorization check failed", "resource", resource, "action", action, "error", err)
-
 			return nil, err
 		}
 

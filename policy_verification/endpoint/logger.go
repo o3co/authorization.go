@@ -12,13 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package client
+package endpoint
 
 import (
 	"log/slog"
-	"os"
+
+	"github.com/o3co/grpc.authz/policy_verification/internal"
 )
 
 func newLogger(level slog.Level) *slog.Logger {
-	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
+	return internal.NewLogger(level)
 }
