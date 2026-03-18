@@ -27,9 +27,13 @@ The current state has three gaps identified through OSS value analysis:
 
 Library users need to write tests for their own gRPC services that use this library. Currently they must implement `endpoint.VerifierEndpoint` themselves in every test file. `interceptor_test.go` already has a local `mockVerifierEndpoint` struct that duplicates this pattern.
 
+### Scope
+
+`endpointtest` is part of the `policy_verification` module (`policy_verification/endpointtest/`). It is intended for users of the `policy_verification` module. Users of `protobuf_policy_option` alone do not need it. The package must be documented as test-only with a package-level doc comment (`// Package endpointtest provides test utilities...`). It must not carry a build constraint since `_test.go` files in other packages need to import it.
+
 ### Design
 
-Add `policy_verification/endpointtest/mock.go` — a testing utility package providing:
+Add `policy_verification/endpointtest/mock.go`:
 
 **Mock verifier constructors:**
 
@@ -49,9 +53,6 @@ func Func(fn func(ctx context.Context, resource, action string) error) endpoint.
 ```go
 // Injects "Authorization: Bearer <token>" into gRPC incoming metadata
 func CtxWithBearerToken(ctx context.Context, token string) context.Context
-
-// Injects x-request-id into gRPC incoming metadata
-func CtxWithRequestID(ctx context.Context, id string) context.Context
 ```
 
 **Test assertion helper:**
@@ -61,16 +62,22 @@ func CtxWithRequestID(ctx context.Context, id string) context.Context
 func AssertGRPCCode(t *testing.T, err error, wantCode codes.Code)
 ```
 
+Note: `CtxWithRequestID` is not included in this commit. It will be added in Commit 2 when streaming tests need it.
+
+### Tests
+
+`endpointtest` itself has a `mock_test.go` with basic usage tests covering `Allow`, `Deny`, `Func`, `CtxWithBearerToken`, and `AssertGRPCCode`.
+
 ### Impact on Existing Tests
 
-- `interceptor_test.go`: remove local `mockVerifierEndpoint`, replace with `endpointtest.Allow()` / `endpointtest.Func(...)`
-- `rest_o3_policy_verifier_test.go`: replace local `assertGRPCCode` and `ctxWithBearerToken` helpers with `endpointtest` equivalents; `httptest.NewServer` setup remains (o3-specific HTTP behavior)
+- `interceptor_test.go`: remove local `mockVerifierEndpoint`, replace with `endpointtest.Allow()` / `endpointtest.Func(...)`; replace local `chainInterceptors` helper context setup with `endpointtest.CtxWithBearerToken`
+- `rest_o3_policy_verifier_test.go`: replace local `assertGRPCCode` and `ctxWithBearerToken` with `endpointtest.AssertGRPCCode` and `endpointtest.CtxWithBearerToken`; `httptest.NewServer` setup remains (o3-specific HTTP behavior)
 
 ---
 
 ## Change 2: Streaming RPC Support
 
-### Problem
+### Motivation
 
 Only `grpc.UnaryServerInterceptor` is provided. gRPC services using server/client/bidi streaming RPCs cannot use this library.
 
@@ -84,9 +91,17 @@ Authorization must be checked **per message on `RecvMsg`**, with no caching. Rat
 - Token expiry during `SendMsg` (between RecvMsg calls) is a session/connection management concern, not an authorization concern — out of scope for this library
 - `MaxConnectionAge` is a deployment-level control that the library cannot rely on
 
-### Design
+**Server-streaming RPC note:** For server-streaming RPCs (`rpc Foo(Request) returns (stream Response)`), the client sends exactly one message. The gRPC framework calls `RecvMsg` once before invoking the handler. This means the per-message check on `RecvMsg` reduces to a single check at stream establishment — functionally equivalent to the unary check. This is acceptable: there is no ongoing client-driven messaging to re-authorize, and the server's send-side is out of scope.
 
-Add `StreamInterceptor` to both modules, following the same Option pattern as `Interceptor`.
+### `field_mappings` Restriction
+
+Dynamic resource resolution from message fields (`field_mappings`) is not supported for streaming RPCs. Streaming RPCs must use static resource strings (e.g., `resource: "posts"`) only.
+
+**Detection:** The check happens at **stream establishment** in `protobuf_policy_option.StreamInterceptor`, before the handler is invoked. If a method's policy contains one or more `field_mappings`, the interceptor returns immediately with `codes.Internal` and the error message `"field_mappings are not supported for streaming RPCs; use a static resource string"`. The stream never starts and `policy_verification.StreamInterceptor` is never invoked in this path.
+
+**Cache:** `StreamInterceptor` uses its own `sync.Map` cache, separate from the `Interceptor` (unary) cache. Each interceptor instance maintains its own cache to prevent test pollution, matching the existing unary behavior.
+
+### Implementation
 
 **`protobuf_policy_option.StreamInterceptor`:**
 
@@ -94,10 +109,10 @@ Add `StreamInterceptor` to both modules, following the same Option pattern as `I
 func StreamInterceptor(opts ...Option) grpc.StreamServerInterceptor
 ```
 
-- Resolves policy from proto method options at stream establishment (same logic as Unary)
-- Marks interceptor as ran in context (same as Unary)
-- **`field_mappings` (dynamic resource resolution from message fields) is not supported for streaming** — streaming RPCs must use static resource strings only
-- If a method has `field_mappings` defined and is called via streaming, return `codes.Internal`
+- At stream establishment: resolves policy from proto method options (same `getMethodPolicy` logic as unary, own `sync.Map` cache)
+- If policy has `field_mappings`: return `codes.Internal` with message `"field_mappings are not supported for streaming RPCs; use a static resource string"`
+- Marks interceptor as ran in context (same as unary)
+- If no policy: pass through to handler
 
 **`policy_verification.StreamInterceptor`:**
 
@@ -105,23 +120,33 @@ func StreamInterceptor(opts ...Option) grpc.StreamServerInterceptor
 func StreamInterceptor(verifierEndpoint endpoint.VerifierEndpoint, opts ...Option) grpc.StreamServerInterceptor
 ```
 
-- Wraps `grpc.ServerStream` to intercept `RecvMsg`
-- Calls `verifierEndpoint.Verify` before each `RecvMsg` completes
-- `SendMsg` is not intercepted (token expiry during send is out of scope)
+- Panics on nil `verifierEndpoint` (same behavior as unary `Interceptor`)
+- Checks `policy.InterceptorRanFromContext` at stream establishment; returns `codes.Internal` if not ran (same misconfiguration guard as unary)
+- Wraps `grpc.ServerStream` to intercept `RecvMsg`; calls `verifierEndpoint.Verify` using `stream.Context()` (evaluated at call time to respect cancellation and token expiry) before each message
 
 ```go
 type authServerStream struct {
     grpc.ServerStream
-    verifyFn func() error
+    resource string
+    action   string
+    verifier endpoint.VerifierEndpoint
+    log      *slog.Logger
 }
 
 func (s *authServerStream) RecvMsg(m interface{}) error {
-    if err := s.verifyFn(); err != nil {
+    if err := s.verifier.Verify(s.ServerStream.Context(), s.resource, s.action); err != nil {
+        s.log.Error("authorization check failed on RecvMsg", "resource", s.resource, "action", s.action, "error", err)
         return err
     }
     return s.ServerStream.RecvMsg(m)
 }
 ```
+
+Note: `s.ServerStream.Context()` is called inline on each `RecvMsg`, not captured at construction, so cancellation and deadline propagation work correctly for long-lived streams.
+
+**`endpointtest` addition (Commit 2):**
+
+Add `endpointtest.CtxWithRequestID` in this commit when streaming tests need it.
 
 **Usage:**
 
@@ -138,20 +163,32 @@ grpc.NewServer(
 )
 ```
 
+### Test Coverage
+
+Both `protobuf_policy_option` and `policy_verification` gain `stream_interceptor_test.go` files covering:
+
+- Nil endpoint panics (policy_verification)
+- Misconfiguration guard (policy_option not ran)
+- Static resource authorized / denied
+- `field_mappings` present → `codes.Internal`
+- No policy → handler called
+
 ---
 
 ## Change 3: README Restructure
 
-### Problem
+### Background
 
 `README.md` is written entirely in Japanese, limiting OSS adoption. Additionally, the new streaming and testing features need documentation.
 
-### Design
+### Structure
 
-```
+```text
 README.md       ← English (primary, new)
-README.ja.md    ← Japanese (existing content migrated + updated)
+README.ja.md    ← Japanese translation of the new README.md
 ```
+
+`README.ja.md` is a full Japanese translation of the new English `README.md` (not a migration of the old content). The old `README.md` Japanese content is used as a reference but the structure follows the new English version.
 
 **README.md sections:**
 
@@ -163,9 +200,7 @@ README.ja.md    ← Japanese (existing content migrated + updated)
 6. Testing utilities (`endpointtest`)
 7. License
 
-**README.ja.md:** Japanese translation of the new README.md, replacing the current README.md content.
-
-Per-module READMEs (`policy_verification/README.md`, etc.) updated to match if they exist.
+Per-module READMEs (`policy_verification/README.md`, `protobuf_policy_option/README.md`) updated in English with Japanese `.ja.md` added if they exist.
 
 ---
 
@@ -173,9 +208,9 @@ Per-module READMEs (`policy_verification/README.md`, etc.) updated to match if t
 
 | # | Commit | Contents |
 |---|---|---|
-| 1 | `feat: add endpointtest package and refactor tests` | New `endpointtest` package; rewrite `interceptor_test.go` and `rest_o3_policy_verifier_test.go` |
-| 2 | `feat: add StreamInterceptor to both modules` | `StreamInterceptor` in `protobuf_policy_option` and `policy_verification`; per-message auth on RecvMsg |
-| 3 | `docs: add English README and Japanese README.ja.md` | New `README.md` (English); `README.ja.md` (Japanese) |
+| 1 | `feat: add endpointtest package and refactor tests` | New `endpointtest` package with `Allow`, `Deny`, `Func`, `CtxWithBearerToken`, `AssertGRPCCode` + `mock_test.go`; rewrite `interceptor_test.go` and `rest_o3_policy_verifier_test.go` |
+| 2 | `feat: add StreamInterceptor to both modules` | `StreamInterceptor` in `protobuf_policy_option` and `policy_verification`; per-message auth on `RecvMsg`; `field_mappings` guard at stream establishment; `stream_interceptor_test.go` for both modules; add `endpointtest.CtxWithRequestID` |
+| 3 | `docs: add English README and Japanese README.ja.md` | New `README.md` (English) covering Unary, Streaming, endpointtest; `README.ja.md` (Japanese translation) |
 
 ---
 
