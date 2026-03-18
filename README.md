@@ -31,15 +31,16 @@ grpc.authz/
 ```go
 import (
     "log/slog"
+    "time"
     policyoption       "github.com/o3co/grpc.authz/protobuf_policy_option"
     policyverification "github.com/o3co/grpc.authz/policy_verification"
-    pvclient           "github.com/o3co/grpc.authz/policy_verification/client"
+    pvendpoint         "github.com/o3co/grpc.authz/policy_verification/endpoint"
 )
 
-verifier, err := pvclient.NewVerifierClient(
-    httpClient,
+verifier, err := pvendpoint.NewRESTEndpoint(
     "http://auth-service/",
-    pvclient.WithLogLevel(slog.LevelError), // デフォルト: LevelError
+    pvendpoint.WithTimeout(5 * time.Second),          // オプション: タイムアウト（デフォルト: 10s）
+    pvendpoint.WithLogLevel(slog.LevelError),          // オプション: ログレベル（デフォルト: LevelError）
 )
 if err != nil { ... }
 
