@@ -34,16 +34,25 @@ import (
 const defaultMaxResponseBodySize int64 = 1024 * 1024 // 1MB
 const defaultTimeout = 10 * time.Second
 
+// buildConfig は NewRESTEndpoint の構築時にのみ使用する一時設定。
+// timeout など構築後に不要なフィールドをここで管理することで、
+// restO3PolicyVerifierEndpoint の struct を実行時に必要なフィールドのみに絞る。
+type buildConfig struct {
+	timeout             time.Duration
+	maxResponseBodySize int64
+	logger              *slog.Logger
+}
+
 // Option はo3 REST エンドポイントの設定オプション
-type Option func(*restO3PolicyVerifierEndpoint)
+type Option func(*buildConfig)
 
 // WithTimeout HTTP クライアントのタイムアウトを設定する。未指定時のデフォルトは 10s。
 func WithTimeout(d time.Duration) Option {
 	if d <= 0 {
 		panic(fmt.Sprintf("timeout must be positive, got %v", d))
 	}
-	return func(e *restO3PolicyVerifierEndpoint) {
-		e.timeout = d
+	return func(c *buildConfig) {
+		c.timeout = d
 	}
 }
 
@@ -52,15 +61,15 @@ func WithMaxResponseBodySize(size int64) Option {
 	if size <= 0 {
 		panic(fmt.Sprintf("maxResponseBodySize must be positive, got %d", size))
 	}
-	return func(e *restO3PolicyVerifierEndpoint) {
-		e.maxResponseBodySize = size
+	return func(c *buildConfig) {
+		c.maxResponseBodySize = size
 	}
 }
 
 // WithLogLevel ログレベルを指定する。未指定時のデフォルトは slog.LevelError。
 func WithLogLevel(level slog.Level) Option {
-	return func(e *restO3PolicyVerifierEndpoint) {
-		e.logger = newLogger(level)
+	return func(c *buildConfig) {
+		c.logger = newLogger(level)
 	}
 }
 
@@ -68,7 +77,6 @@ func WithLogLevel(level slog.Level) Option {
 type restO3PolicyVerifierEndpoint struct {
 	httpClient          *http.Client
 	verifyURL           string
-	timeout             time.Duration
 	maxResponseBodySize int64
 	logger              *slog.Logger
 }
@@ -92,19 +100,21 @@ func NewRESTEndpoint(baseURL string, opts ...Option) (VerifierEndpoint, error) {
 
 	base.Path = strings.TrimSuffix(base.Path, "/") + "/verify"
 
-	e := &restO3PolicyVerifierEndpoint{
-		verifyURL:           base.String(),
+	cfg := &buildConfig{
 		timeout:             defaultTimeout,
 		maxResponseBodySize: defaultMaxResponseBodySize,
 		logger:              newLogger(slog.LevelError),
 	}
 	for _, opt := range opts {
-		opt(e)
+		opt(cfg)
 	}
 
-	e.httpClient = &http.Client{Timeout: e.timeout}
-
-	return e, nil
+	return &restO3PolicyVerifierEndpoint{
+		httpClient:          &http.Client{Timeout: cfg.timeout},
+		verifyURL:           base.String(),
+		maxResponseBodySize: cfg.maxResponseBodySize,
+		logger:              cfg.logger,
+	}, nil
 }
 
 type token struct {
@@ -171,12 +181,14 @@ func (e *restO3PolicyVerifierEndpoint) Verify(ctx context.Context, resource, act
 		return status.Errorf(codes.Internal, "failed to create request: %v", err)
 	}
 
+	requestID := getRequestID(ctx)
+
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", tok.TokenType+" "+tok.Value)
 
 	// x-request-id が存在する場合のみ転送する
-	if requestID := getRequestID(ctx); requestID != "" {
+	if requestID != "" {
 		req.Header.Set("x-request-id", requestID)
 	}
 
@@ -190,11 +202,10 @@ func (e *restO3PolicyVerifierEndpoint) Verify(ctx context.Context, resource, act
 	// ボディを最大 maxResponseBodySize バイトまで読み出す（メモリ保護）。
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, e.maxResponseBodySize))
 	if err != nil {
-		e.logger.Error("failed to read response body", "error", err)
+		e.logger.Error("failed to read response body", "error", err, "x-request-id", requestID)
 		respBody = nil
 	}
 
-	requestID := getRequestID(ctx)
 	e.logger.Debug("response received", "status", resp.StatusCode, "x-request-id", requestID)
 
 	// --- ステータスコードに基づく判定 -------------------------------------
@@ -207,17 +218,15 @@ func (e *restO3PolicyVerifierEndpoint) Verify(ctx context.Context, resource, act
 	if len(logBody) > maxLoggedBodySize {
 		logBody = logBody[:maxLoggedBodySize]
 	}
+	e.logger.Error("error response from authorization server", "status", resp.StatusCode, "body", string(logBody), "x-request-id", requestID)
 
 	if resp.StatusCode == http.StatusForbidden {
-		e.logger.Error("error response from authorization server", "status", resp.StatusCode, "body", string(logBody), "x-request-id", requestID)
 		return status.Error(codes.PermissionDenied, "access denied")
 	}
 
 	if resp.StatusCode == http.StatusUnauthorized {
-		e.logger.Error("error response from authorization server", "status", resp.StatusCode, "body", string(logBody), "x-request-id", requestID)
 		return status.Error(codes.Unauthenticated, "invalid or expired token")
 	}
 
-	e.logger.Error("unexpected authorization service response", "status", resp.StatusCode, "x-request-id", requestID)
-	return status.Errorf(codes.Internal, "authorization service error: %d, body: %s", resp.StatusCode, "Failed to verify policy")
+	return status.Errorf(codes.Internal, "authorization service error: %d", resp.StatusCode)
 }
