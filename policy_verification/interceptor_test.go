@@ -26,16 +26,8 @@ import (
 
 	policyoption "github.com/o3co/grpc.authz/protobuf_policy_option"
 	"github.com/o3co/grpc.authz/policy_verification/endpoint"
+	"github.com/o3co/grpc.authz/policy_verification/endpointtest"
 )
-
-// mockVerifierEndpoint は endpoint.VerifierEndpoint のテスト用実装
-type mockVerifierEndpoint struct {
-	verifyFn func(ctx context.Context, resource, action string) error
-}
-
-func (m *mockVerifierEndpoint) Verify(ctx context.Context, resource, action string) error {
-	return m.verifyFn(ctx, resource, action)
-}
 
 // chainInterceptors は interceptor チェーンを構築してハンドラーを呼び出すヘルパー
 func chainInterceptors(ctx context.Context, req interface{}, fullMethod string, handler grpc.UnaryHandler, interceptors ...grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -122,12 +114,10 @@ func TestInterceptor_NilEndpoint_Panics(t *testing.T) {
 // protobuf_policy_option.Interceptor を経由せずに呼ばれた場合は
 // インターセプターチェーンの設定ミスとして Internal エラーを返すことを確認する。
 func TestInterceptor_PolicyOptionInterceptorNotRan_ReturnsInternal(t *testing.T) {
-	ep := &mockVerifierEndpoint{
-		verifyFn: func(ctx context.Context, resource, action string) error {
-			t.Error("Verify should not be called")
-			return nil
-		},
-	}
+	ep := endpointtest.Func(func(ctx context.Context, resource, action string) error {
+		t.Error("Verify should not be called")
+		return nil
+	})
 
 	pvInterceptor := Interceptor(ep)
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
@@ -154,12 +144,10 @@ func TestInterceptor_PolicyOptionInterceptorNotRan_ReturnsInternal(t *testing.T)
 // ポリシー定義がないメソッド（proto レジストリ未登録）の場合は
 // Verify を呼ばず handler をそのまま呼び出すことを確認する。
 func TestInterceptor_NoPolicy_CallsHandler(t *testing.T) {
-	ep := &mockVerifierEndpoint{
-		verifyFn: func(ctx context.Context, resource, action string) error {
-			t.Error("Verify should not be called when method has no policy")
-			return nil
-		},
-	}
+	ep := endpointtest.Func(func(ctx context.Context, resource, action string) error {
+		t.Error("Verify should not be called when method has no policy")
+		return nil
+	})
 
 	called := false
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
@@ -189,11 +177,7 @@ func TestInterceptor_NoPolicy_CallsHandler(t *testing.T) {
 // metadata の x-request-id がインターセプター内で context に書き込まれ、
 // handler に渡される context から取得できることを確認する。
 func TestInterceptor_RequestID_PropagatedToContext(t *testing.T) {
-	ep := &mockVerifierEndpoint{
-		verifyFn: func(ctx context.Context, resource, action string) error {
-			return nil
-		},
-	}
+	ep := endpointtest.Allow()
 
 	var capturedCtx context.Context
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
@@ -201,8 +185,7 @@ func TestInterceptor_RequestID_PropagatedToContext(t *testing.T) {
 		return nil, nil
 	}
 
-	md := metadata.Pairs("x-request-id", "test-request-id-xyz")
-	ctx := metadata.NewIncomingContext(context.Background(), md)
+	ctx := endpointtest.CtxWithRequestID(context.Background(), "test-request-id-xyz")
 
 	_, err := chainInterceptors(
 		ctx, nil, "/unknown.Service/UnknownMethod", handler,
@@ -225,11 +208,7 @@ func TestInterceptor_RequestID_PropagatedToContext(t *testing.T) {
 // metadata に x-request-id がない場合でも、自動生成した ID が
 // handler に渡される context に書き込まれることを確認する。
 func TestInterceptor_RequestID_GeneratedWhenAbsent(t *testing.T) {
-	ep := &mockVerifierEndpoint{
-		verifyFn: func(ctx context.Context, resource, action string) error {
-			return nil
-		},
-	}
+	ep := endpointtest.Allow()
 
 	var capturedCtx context.Context
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
