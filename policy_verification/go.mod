@@ -5,7 +5,7 @@ go 1.25.5
 replace github.com/o3co/grpc.authz/protobuf_policy_option => ../protobuf_policy_option
 
 require (
-	github.com/o3co/grpc.authz/protobuf_policy_option v0.0.0
+	github.com/o3co/grpc.authz/protobuf_policy_option v0.1.0
 	google.golang.org/grpc v1.79.2
 )
 
