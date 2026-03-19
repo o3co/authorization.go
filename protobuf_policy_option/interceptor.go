@@ -293,6 +293,71 @@ func resolveResourceFromRequest(log *slog.Logger, policy *pb.Policy, req interfa
 	}, nil
 }
 
+// hasFieldMappings returns true if the policy has any field_mappings defined.
+// Streaming RPCs do not support field_mappings.
+func hasFieldMappings(policy *pb.Policy) bool {
+	return len(policy.FieldMappings) > 0
+}
+
+// fieldMappingsNotSupportedError returns the standard codes.Internal error
+// used when a streaming RPC method has field_mappings defined.
+func fieldMappingsNotSupportedError() error {
+	return status.Error(codes.Internal,
+		"field_mappings are not supported for streaming RPCs; use a static resource string")
+}
+
+// StreamInterceptor resolves policy from proto method options and injects it into
+// the stream context. Must be chained before policy_verification.StreamInterceptor.
+//
+// field_mappings are not supported for streaming RPCs. If a method's policy
+// defines field_mappings, the stream is rejected with codes.Internal.
+func StreamInterceptor(opts ...Option) grpc.StreamServerInterceptor {
+	cfg := &config{logLevel: slog.LevelError}
+	for _, opt := range opts {
+		opt(cfg)
+	}
+	log := newLogger(cfg.logLevel)
+
+	var cache sync.Map
+
+	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		log.Debug("processing stream method", "method", info.FullMethod)
+
+		policy, err := getMethodPolicy(&cache, log, info.FullMethod)
+		if err != nil {
+			log.Error("failed to get method policy", "method", info.FullMethod, "error", err)
+			return status.Errorf(codes.Internal, "failed to get method policy: %v", err)
+		}
+
+		// Always mark interceptor as ran so policy_verification.StreamInterceptor
+		// can detect misconfiguration.
+		wrapped := &contextServerStream{ServerStream: ss}
+		wrapped.ctx = markInterceptorRan(ss.Context())
+
+		if policy == nil {
+			return handler(srv, wrapped)
+		}
+
+		if hasFieldMappings(policy) {
+			log.Error("field_mappings are not supported for streaming RPCs", "method", info.FullMethod)
+			return fieldMappingsNotSupportedError()
+		}
+
+		log.Debug("policy resolved for stream", "resource", policy.Resource, "action", policy.Action)
+		wrapped.ctx = withPolicy(wrapped.ctx, policy.Resource, policy.Action)
+
+		return handler(srv, wrapped)
+	}
+}
+
+// contextServerStream wraps grpc.ServerStream to override Context().
+type contextServerStream struct {
+	grpc.ServerStream
+	ctx context.Context
+}
+
+func (s *contextServerStream) Context() context.Context { return s.ctx }
+
 // extractFieldFromRequest リクエストからフィールド値を抽出（リフレクション使用）
 func extractFieldFromRequest(log *slog.Logger, req interface{}, fieldPath string) (string, error) {
 	log.Debug("extracting field from request", "field", fieldPath, "type", fmt.Sprintf("%T", req))
