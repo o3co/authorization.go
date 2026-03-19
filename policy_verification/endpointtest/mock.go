@@ -70,7 +70,7 @@ func CtxWithRequestID(ctx context.Context, id string) context.Context {
 
 // AssertGRPCCode asserts that err is a gRPC status error with the expected code.
 // Do not use with codes.OK — use `if err != nil { t.Fatalf(...) }` instead.
-func AssertGRPCCode(t *testing.T, err error, wantCode codes.Code) {
+func AssertGRPCCode(t testing.TB, err error, wantCode codes.Code) {
 	t.Helper()
 	if err == nil {
 		t.Fatalf("expected error with code %v, got nil", wantCode)

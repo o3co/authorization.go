@@ -16,6 +16,8 @@ package endpointtest_test
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"testing"
 
 	"google.golang.org/grpc/codes"
@@ -97,6 +99,43 @@ func TestAssertGRPCCode_MatchingCode_Passes(t *testing.T) {
 	endpointtest.AssertGRPCCode(fakeT, err, codes.NotFound)
 	if fakeT.Failed() {
 		t.Error("AssertGRPCCode should not fail for matching code")
+	}
+}
+
+// fakeT is a minimal testing.TB implementation for testing that AssertGRPCCode
+// calls t.Fatalf when it should. It records the failure message without calling
+// runtime.Goexit so the outer test can inspect the result.
+type fakeT struct {
+	testing.TB
+	failed bool
+	msg    string
+}
+
+func (f *fakeT) Helper() {}
+
+func (f *fakeT) Fatalf(format string, args ...interface{}) {
+	f.failed = true
+	f.msg = fmt.Sprintf(format, args...)
+}
+
+func (f *fakeT) Errorf(format string, args ...interface{}) {
+	f.failed = true
+	f.msg = fmt.Sprintf(format, args...)
+}
+
+func TestAssertGRPCCode_NilError_Fails(t *testing.T) {
+	ft := &fakeT{}
+	endpointtest.AssertGRPCCode(ft, nil, codes.PermissionDenied)
+	if !ft.failed {
+		t.Fatal("expected AssertGRPCCode to call Fatalf for nil error, but it did not")
+	}
+}
+
+func TestAssertGRPCCode_NonGRPCError_Fails(t *testing.T) {
+	ft := &fakeT{}
+	endpointtest.AssertGRPCCode(ft, errors.New("plain error"), codes.PermissionDenied)
+	if !ft.failed {
+		t.Fatal("expected AssertGRPCCode to call Fatalf for non-gRPC error, but it did not")
 	}
 }
 

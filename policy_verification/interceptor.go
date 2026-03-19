@@ -130,7 +130,7 @@ func StreamInterceptor(verifierEndpoint endpoint.VerifierEndpoint, opts ...Optio
 		log.Debug("processing stream method", "method", info.FullMethod, "x-request-id", requestID)
 
 		if !policy.InterceptorRanFromContext(ctx) {
-			log.Error("interceptor chain misconfiguration: policyoption.StreamInterceptor is not registered")
+			log.Error("interceptor chain misconfiguration: protobuf_policy_option.StreamInterceptor is not registered")
 			return status.Error(codes.Internal,
 				"protobuf_policy_option.Interceptor is not registered in the interceptor chain")
 		}

@@ -164,6 +164,30 @@ func TestAuthServerStream_RecvMsg_DeniedReturnsError(t *testing.T) {
 	}
 }
 
+// TestStreamInterceptor_NoPolicy_PropagatesRequestID verifies that the no-policy
+// path propagates the enriched context (with x-request-id) to the handler via
+// requestIDStream.
+func TestStreamInterceptor_NoPolicy_PropagatesRequestID(t *testing.T) {
+	ms := &mockServerStream{ctx: context.Background()}
+
+	var capturedRequestID string
+	handler := func(srv interface{}, stream grpc.ServerStream) error {
+		capturedRequestID = endpoint.RequestIDFromContext(stream.Context())
+		return nil
+	}
+
+	err := chainStreamInterceptors(ms, "/unknown.Service/UnknownMethod", handler,
+		policyoption.StreamInterceptor(),
+		StreamInterceptor(endpointtest.Allow()),
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if capturedRequestID == "" {
+		t.Fatal("expected non-empty x-request-id in stream.Context(), got empty string")
+	}
+}
+
 // TestAuthServerStream_RecvMsg_UsesStreamContext verifies that Verify receives
 // the stable enriched context (with x-request-id) set at stream establishment,
 // and that the same request ID is used across all RecvMsg calls.
