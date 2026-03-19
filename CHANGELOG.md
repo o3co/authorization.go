@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+---
+
+## [0.1.0] - 2026-03-19
+
 ### Added
 
 - `endpointtest` package: test utilities for services using `policy_verification` (`Allow`, `Deny`, `Func`, `CtxWithBearerToken`, `CtxWithRequestID`, `AssertGRPCCode`)
@@ -24,4 +28,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-[Unreleased]: https://github.com/o3co/grpc.authz/compare/HEAD...HEAD
+[Unreleased]: https://github.com/o3co/grpc.authz/compare/policy_verification/v0.1.0...HEAD
+[0.1.0]: https://github.com/o3co/grpc.authz/releases/tag/policy_verification/v0.1.0
