@@ -46,7 +46,6 @@ import "github.com/o3co/grpc.authz/policy_verification/endpoint"
 | `WithTimeout(d time.Duration) Option` | HTTP クライアントのタイムアウト（デフォルト: 10s） |
 | `WithLogLevel(level slog.Level) Option` | エンドポイントのログレベル（デフォルト: `slog.LevelError`） |
 | `WithMaxResponseBodySize(size int64) Option` | レスポンスボディの最大読み取りサイズ（デフォルト: 1 MB） |
-| `WithRequestID(ctx, id) context.Context` | x-request-id を context に格納する（内部使用） |
 | `RequestIDFromContext(ctx) string` | context から x-request-id を取得する |
 
 ## endpointtest パッケージ

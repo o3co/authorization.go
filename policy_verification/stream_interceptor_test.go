@@ -123,6 +123,7 @@ func TestAuthServerStream_RecvMsg_CallsVerify(t *testing.T) {
 	underlying := &mockServerStream{ctx: context.Background()}
 	wrapped := &authServerStream{
 		ServerStream: underlying,
+		ctx:          context.Background(),
 		resource:     "posts",
 		action:       "read",
 		verifier:     ep,
@@ -147,6 +148,7 @@ func TestAuthServerStream_RecvMsg_DeniedReturnsError(t *testing.T) {
 	underlying := &mockServerStream{ctx: context.Background()}
 	wrapped := &authServerStream{
 		ServerStream: underlying,
+		ctx:          context.Background(),
 		resource:     "posts",
 		action:       "delete",
 		verifier:     endpointtest.Deny(),
@@ -163,7 +165,8 @@ func TestAuthServerStream_RecvMsg_DeniedReturnsError(t *testing.T) {
 }
 
 // TestAuthServerStream_RecvMsg_UsesStreamContext verifies that Verify receives
-// the context from the underlying stream (evaluated at call time).
+// the stable enriched context (with x-request-id) set at stream establishment,
+// and that the same request ID is used across all RecvMsg calls.
 func TestAuthServerStream_RecvMsg_UsesStreamContext(t *testing.T) {
 	var capturedRequestID string
 	ep := endpointtest.Func(func(ctx context.Context, _, _ string) error {
@@ -171,10 +174,12 @@ func TestAuthServerStream_RecvMsg_UsesStreamContext(t *testing.T) {
 		return nil
 	})
 
-	baseCtx := endpointtest.CtxWithRequestID(context.Background(), "stream-req-id")
-	underlying := &mockServerStream{ctx: baseCtx}
+	// Simulate the enriched ctx produced by StreamInterceptor at stream establishment.
+	enrichedCtx := endpoint.WithRequestID(context.Background(), "stream-req-id")
+	underlying := &mockServerStream{ctx: context.Background()}
 	wrapped := &authServerStream{
 		ServerStream: underlying,
+		ctx:          enrichedCtx,
 		resource:     "posts",
 		action:       "read",
 		verifier:     ep,

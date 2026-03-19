@@ -46,7 +46,6 @@ import "github.com/o3co/grpc.authz/policy_verification/endpoint"
 | `WithTimeout(d time.Duration) Option` | HTTP client timeout (default: 10s) |
 | `WithLogLevel(level slog.Level) Option` | Log level for the endpoint (default: `slog.LevelError`) |
 | `WithMaxResponseBodySize(size int64) Option` | Max bytes to read from the response body (default: 1 MB) |
-| `WithRequestID(ctx, id) context.Context` | Stores an x-request-id in context (used internally) |
 | `RequestIDFromContext(ctx) string` | Retrieves the x-request-id from context |
 
 ## endpointtest package

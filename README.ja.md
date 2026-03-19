@@ -255,7 +255,7 @@ x-request-id: 20260318120530_a1b2c3d4e5f6...
 ヘッダー転送ルール：
 
 - `Authorization`：必須。gRPC の `authorization` メタデータからそのまま転送します。存在しない場合、リクエスト送信前にインターセプターが `codes.Unauthenticated` を返します。
-- `x-request-id`：gRPC メタデータに存在する場合に転送します。存在しない場合は `YYYYMMDDHHmmss_<uuid-v4>` 形式で新たに生成されます。
+- `x-request-id`：gRPC メタデータに存在する場合に転送します。存在しない場合は `YYYYMMDDHHmmss_<32桁の16進数>` 形式で新たに生成されます。
 
 レスポンス → gRPC ステータスコードのマッピング：
 

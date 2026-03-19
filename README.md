@@ -255,7 +255,7 @@ x-request-id: 20260318120530_a1b2c3d4e5f6...
 Header forwarding rules:
 
 - `Authorization`: required. Forwarded verbatim from gRPC `authorization` metadata. If absent, the interceptor returns `codes.Unauthenticated` before sending the request.
-- `x-request-id`: forwarded if present in gRPC metadata. If absent, a new ID is generated in the format `YYYYMMDDHHmmss_<uuid-v4>`.
+- `x-request-id`: forwarded if present in gRPC metadata. If absent, a new ID is generated in the format `YYYYMMDDHHmmss_<32-char hex>`.
 
 Response → gRPC status code mapping:
 
@@ -266,7 +266,7 @@ Response → gRPC status code mapping:
 | `403` | `codes.PermissionDenied` |
 | Any other | `codes.Internal` |
 
-The authorization server's response body is never forwarded to the gRPC client. It is logged at error level (up to 1 KB) for debugging.
+The authorization server's response body is never forwarded to the gRPC client — to prevent internal information leakage. It is logged at error level (up to 1 KB) for debugging.
 
 ## License
 

@@ -83,22 +83,25 @@ type requestIDStream struct {
 func (s *requestIDStream) Context() context.Context { return s.ctx }
 
 // authServerStream wraps grpc.ServerStream to call Verify before each RecvMsg.
+// ctx holds the enriched context (with a stable x-request-id) computed once at
+// stream establishment, so all RecvMsg calls share the same request ID.
 type authServerStream struct {
 	grpc.ServerStream
+	ctx      context.Context
 	resource string
 	action   string
 	verifier endpoint.VerifierEndpoint
 	log      *slog.Logger
 }
 
+// Context returns the enriched context with the stable x-request-id. Because
+// ctx is derived from the underlying stream context, cancellation and deadline
+// propagation work correctly for long-lived streams.
+func (s *authServerStream) Context() context.Context { return s.ctx }
+
 // RecvMsg checks authorization before delegating to the underlying RecvMsg.
-// s.ServerStream.Context() is evaluated inline on each call so that context
-// cancellation and token expiry are respected for long-lived streams.
 func (s *authServerStream) RecvMsg(m interface{}) error {
-	ctx := s.ServerStream.Context()
-	requestID := extractOrGenerateRequestID(ctx)
-	ctx = endpoint.WithRequestID(ctx, requestID)
-	if err := s.verifier.Verify(ctx, s.resource, s.action); err != nil {
+	if err := s.verifier.Verify(s.ctx, s.resource, s.action); err != nil {
 		s.log.Error("authorization check failed on RecvMsg",
 			"resource", s.resource, "action", s.action, "error", err)
 		return err
@@ -143,6 +146,7 @@ func StreamInterceptor(verifierEndpoint endpoint.VerifierEndpoint, opts ...Optio
 
 		wrapped := &authServerStream{
 			ServerStream: ss,
+			ctx:          ctx, // enriched context with stable x-request-id from stream establishment
 			resource:     policyData.Resource,
 			action:       policyData.Action,
 			verifier:     verifierEndpoint,
