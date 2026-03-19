@@ -104,7 +104,9 @@ func TestAssertGRPCCode_MatchingCode_Passes(t *testing.T) {
 
 // fakeT is a minimal testing.TB implementation for testing that AssertGRPCCode
 // calls t.Fatalf when it should. It records the failure message without calling
-// runtime.Goexit so the outer test can inspect the result.
+// runtime.Goexit (by design), so the outer test can inspect the result.
+// The early-return guards prevent execution continuation after a failure from
+// masking the intended failure path with additional Errorf calls.
 type fakeT struct {
 	testing.TB
 	failed bool
@@ -114,11 +116,17 @@ type fakeT struct {
 func (f *fakeT) Helper() {}
 
 func (f *fakeT) Fatalf(format string, args ...interface{}) {
+	if f.failed {
+		return
+	}
 	f.failed = true
 	f.msg = fmt.Sprintf(format, args...)
 }
 
 func (f *fakeT) Errorf(format string, args ...interface{}) {
+	if f.failed {
+		return
+	}
 	f.failed = true
 	f.msg = fmt.Sprintf(format, args...)
 }
