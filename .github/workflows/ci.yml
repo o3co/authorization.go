@@ -44,3 +44,41 @@ jobs:
       - name: test
         working-directory: policy_verification
         run: go test ./... -count=1
+
+  proto-sync:
+    name: proto sync check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: protobuf_policy_option/go.mod
+
+      - name: install protoc
+        env:
+          PROTOC_VERSION: "29.3"
+        run: |
+          curl -sSL \
+            "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip" \
+            -o protoc.zip
+          unzip -q protoc.zip -d $HOME/.local
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: install protoc-gen-go
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.10
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
+
+      - name: regenerate
+        working-directory: protobuf_policy_option
+        run: make generate
+
+      - name: check diff
+        run: |
+          if ! git diff --exit-code protobuf_policy_option/schema/; then
+            echo ""
+            echo "policy.pb.go is out of sync with policy.proto."
+            echo "Run 'make generate' in protobuf_policy_option/ and commit the result."
+            exit 1
+          fi
