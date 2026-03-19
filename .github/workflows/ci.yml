@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [develop]
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   protobuf-policy-option:
     name: protobuf_policy_option
@@ -54,6 +57,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: protobuf_policy_option/go.mod
+          cache-dependency-path: protobuf_policy_option/go.sum
 
       - name: install protoc
         env:
