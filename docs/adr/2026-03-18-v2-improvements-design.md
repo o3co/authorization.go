@@ -53,6 +53,9 @@ func Func(fn func(ctx context.Context, resource, action string) error) endpoint.
 ```go
 // Injects "Authorization: Bearer <token>" into gRPC incoming metadata
 func CtxWithBearerToken(ctx context.Context, token string) context.Context
+
+// Injects x-request-id into gRPC incoming metadata
+func CtxWithRequestID(ctx context.Context, id string) context.Context
 ```
 
 **Test assertion helper:**
@@ -62,11 +65,9 @@ func CtxWithBearerToken(ctx context.Context, token string) context.Context
 func AssertGRPCCode(t *testing.T, err error, wantCode codes.Code)
 ```
 
-Note: `CtxWithRequestID` is not included in this commit. It will be added in Commit 2 when streaming tests need it.
-
 ### Tests
 
-`endpointtest` itself has a `mock_test.go` with basic usage tests covering `Allow`, `Deny`, `Func`, `CtxWithBearerToken`, and `AssertGRPCCode`.
+`endpointtest` itself has a `mock_test.go` with basic usage tests covering `Allow`, `Deny`, `Func`, `CtxWithBearerToken`, `CtxWithRequestID`, and `AssertGRPCCode`.
 
 ### Impact on Existing Tests
 
@@ -144,10 +145,6 @@ func (s *authServerStream) RecvMsg(m interface{}) error {
 
 Note: `s.ServerStream.Context()` is called inline on each `RecvMsg`, not captured at construction, so cancellation and deadline propagation work correctly for long-lived streams.
 
-**`endpointtest` addition (Commit 2):**
-
-Add `endpointtest.CtxWithRequestID` in this commit when streaming tests need it.
-
 **Usage:**
 
 ```go
@@ -179,28 +176,31 @@ Both `protobuf_policy_option` and `policy_verification` gain `stream_interceptor
 
 ### Background
 
-`README.md` is written entirely in Japanese, limiting OSS adoption. Additionally, the new streaming and testing features need documentation.
+`README.md` is written entirely in Japanese, lacks sufficient depth, and does not explain the project's purpose or design rationale. The existing content will be fully rewritten from scratch.
 
 ### Structure
 
 ```text
-README.md       ← English (primary, new)
+README.md       ← English (primary, full rewrite)
 README.ja.md    ← Japanese translation of the new README.md
 ```
 
-`README.ja.md` is a full Japanese translation of the new English `README.md` (not a migration of the old content). The old `README.md` Japanese content is used as a reference but the structure follows the new English version.
+Both files are written fresh. The old `README.md` is replaced entirely; `README.ja.md` is created as a full Japanese translation of the new English version.
 
 **README.md sections:**
 
-1. What it is (1–2 sentence summary)
-2. Module structure (directory tree + responsibility table)
-3. Interceptor chain order and rationale
-4. Usage example (Unary)
-5. Streaming RPC support (new)
-6. Testing utilities (`endpointtest`)
-7. License
+1. **What it is** — 2–3 sentence summary: a gRPC authorization middleware that lets you declare access policy in `.proto` files and enforce it automatically via interceptors
+2. **Why** — motivation: co-locating policy with API definition (DRY, reviewable), lightweight alternative to OPA/Casbin for teams already using protobuf
+3. **How it works** — conceptual explanation of the two-module pipeline: `protobuf_policy_option` resolves policy from proto options into context; `policy_verification` reads context and calls the authorization server; why two modules instead of one
+4. **Interceptor chain** — required order, what happens if misconfigured, code example
+5. **Proto option reference** — how to annotate a method: `resource`, `action`, `field_mappings` with placeholder syntax, a complete `.proto` example
+6. **Quick start (Unary)** — minimal working Go example from server setup to first authorized call
+7. **Streaming RPC** — how `StreamServerInterceptor` works, the per-`RecvMsg` security model, `field_mappings` limitation, code example
+8. **Testing your service** — how to use `endpointtest` to test gRPC handlers without a real authorization server; `Allow()`, `Deny()`, `Func()` examples
+9. **Authorization server contract** — what the o3 REST endpoint expects (`POST /verify`, request/response shape, status code mapping to gRPC codes)
+10. **License**
 
-Per-module READMEs (`policy_verification/README.md`, `protobuf_policy_option/README.md`) updated in English with Japanese `.ja.md` added if they exist.
+Per-module READMEs (`policy_verification/README.md`, `protobuf_policy_option/README.md`) also fully rewritten in English with `.ja.md` counterparts added.
 
 ---
 
@@ -208,9 +208,9 @@ Per-module READMEs (`policy_verification/README.md`, `protobuf_policy_option/REA
 
 | # | Commit | Contents |
 |---|---|---|
-| 1 | `feat: add endpointtest package and refactor tests` | New `endpointtest` package with `Allow`, `Deny`, `Func`, `CtxWithBearerToken`, `AssertGRPCCode` + `mock_test.go`; rewrite `interceptor_test.go` and `rest_o3_policy_verifier_test.go` |
-| 2 | `feat: add StreamInterceptor to both modules` | `StreamInterceptor` in `protobuf_policy_option` and `policy_verification`; per-message auth on `RecvMsg`; `field_mappings` guard at stream establishment; `stream_interceptor_test.go` for both modules; add `endpointtest.CtxWithRequestID` |
-| 3 | `docs: add English README and Japanese README.ja.md` | New `README.md` (English) covering Unary, Streaming, endpointtest; `README.ja.md` (Japanese translation) |
+| 1 | `feat: add endpointtest package and refactor tests` | New `endpointtest` package with `Allow`, `Deny`, `Func`, `CtxWithBearerToken`, `CtxWithRequestID`, `AssertGRPCCode` + `mock_test.go`; rewrite `interceptor_test.go` and `rest_o3_policy_verifier_test.go` |
+| 2 | `feat: add StreamInterceptor to both modules` | `StreamInterceptor` in `protobuf_policy_option` and `policy_verification`; per-message auth on `RecvMsg`; `field_mappings` guard at stream establishment; `stream_interceptor_test.go` for both modules |
+| 3 | `docs: rewrite README in English, add README.ja.md` | Full rewrite of `README.md` (English) with purpose, how it works, proto reference, quick start, streaming, testing, auth server contract; `README.ja.md` (Japanese translation); per-module READMEs updated |
 
 ---
 
