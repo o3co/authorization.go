@@ -1,5 +1,10 @@
 # grpc.authz
 
+[![CI](https://github.com/o3co/grpc.authz/actions/workflows/ci.yml/badge.svg)](https://github.com/o3co/grpc.authz/actions/workflows/ci.yml)
+[![Go Reference (policy_verification)](https://pkg.go.dev/badge/github.com/o3co/grpc.authz/policy_verification.svg)](https://pkg.go.dev/github.com/o3co/grpc.authz/policy_verification)
+[![Go Reference (protobuf_policy_option)](https://pkg.go.dev/badge/github.com/o3co/grpc.authz/protobuf_policy_option.svg)](https://pkg.go.dev/github.com/o3co/grpc.authz/protobuf_policy_option)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+
 `grpc.authz` は Go 向けの gRPC 認可ミドルウェアライブラリです。`.proto` のメソッドオプションにアクセスポリシー（リソース + アクション）を直接宣言し、インターセプター経由で自動的に認可チェックを行います。ハンドラーにチェックを手書きする必要はありません。
 
 ## なぜ grpc.authz を使うのか
