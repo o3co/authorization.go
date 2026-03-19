@@ -1,49 +1,100 @@
 # protobuf_policy_option
 
-gRPC メソッドの `.proto` ファイルにカスタムオプションでポリシーを宣言し、受信リクエストのフィールドからリソースを解決して `context.Context` に注入する gRPC サーバーインターセプターです。
+`protobuf_policy_option` is a gRPC server interceptor module that reads the `(o3.policy)` custom method option from the protobuf registry, resolves `<placeholder>` tokens in the resource string using fields from the incoming request, and stores the result in `context.Context` for downstream interceptors to consume. It is one of two modules that make up `grpc.authz`; it handles the policy declaration and resolution side, while `policy_verification` handles the enforcement side.
 
-## 目的
+## Public API
 
-認可に必要な「リソース」と「アクション」をコードではなく `.proto` で宣言することで、認可ポリシーをサービス定義と一元管理します。インターセプターは Protobuf のリフレクション API を使ってリクエスト到着時にポリシーを解決し、後続のインターセプターが参照できるよう `context.Context` に格納します。
+### Interceptor
 
-## 特性
-
-- **宣言的ポリシー**: ポリシーは `.proto` のメソッドオプションとして記述。実装コードへの散在を防ぎます。
-- **テンプレートによるリソース解決**: リソース文字列に `<field_name>` 形式のプレースホルダーを書くと、受信リクエストの対応フィールドの値で自動置換されます。
-- **キャッシュ**: `protoregistry.GlobalFiles` のスキャンは初回のみ実行し、結果を `sync.Map` にキャッシュします。2 回目以降のリクエストはキャッシュから取得するため、スキャンのオーバーヘッドはありません。
-- **proto3 ゼロ値対応**: `int64=0` や空文字列などのゼロ値フィールドも正しく抽出できます。
-
-## インストール
-
-```bash
-go get github.com/o3co/grpc.authz/protobuf_policy_option
+```go
+func Interceptor(opts ...Option) grpc.UnaryServerInterceptor
 ```
 
-## 使い方
+Returns a unary server interceptor that, for each RPC call:
 
-### 1. `.proto` にポリシーを宣言する
+1. Looks up the `(o3.policy)` method option from the proto registry (result is cached per interceptor instance after the first call).
+2. Marks itself as ran in context so `policy_verification.Interceptor` can detect misconfiguration.
+3. If no policy option is found, passes through to the next handler.
+4. Resolves any `<placeholder>` tokens in the resource string using `field_mappings` and request fields.
+5. Stores the resolved `Policy{Resource, Action}` in context.
 
-```protobuf
+### StreamInterceptor
+
+```go
+func StreamInterceptor(opts ...Option) grpc.StreamServerInterceptor
+```
+
+Returns a stream server interceptor with the same policy lookup and context injection logic as `Interceptor`. `field_mappings` are **not supported** for streaming RPCs — if a method's option includes `field_mappings`, the stream is rejected with `codes.Internal`. Use a static resource string for streaming methods.
+
+### WithLogLevel
+
+```go
+func WithLogLevel(level slog.Level) Option
+```
+
+Sets the log level for the interceptor. Default: `slog.LevelError`.
+
+### Context helpers
+
+```go
+func PolicyFromContext(ctx context.Context) (*Policy, bool)
+```
+
+Returns the resolved policy stored by `Interceptor`, and a boolean indicating whether one was present. Use this in custom downstream interceptors or middleware that need to inspect the resolved resource and action.
+
+```go
+func InterceptorRanFromContext(ctx context.Context) bool
+```
+
+Returns true if `protobuf_policy_option.Interceptor` (or `StreamInterceptor`) has already run in this context. Used internally by `policy_verification` to detect interceptor chain misconfiguration.
+
+### Policy type
+
+```go
+type Policy struct {
+    Resource string
+    Action   string
+}
+```
+
+## Proto setup
+
+Import `policy.proto` (from the `schema` sub-package) in your `.proto` files to access the `(o3.policy)` method option extension:
+
+```proto
+syntax = "proto3";
+
 import "policy.proto";
 
 service ItemService {
   rpc GetItem(GetItemRequest) returns (GetItemResponse) {
-    option (policy.v1.policy) = {
+    option (o3.policy) = {
       resource: "items/<id>"
-      action: "read"
-      field_mappings: [{ placeholder: "id", request_field: "id" }]
+      action:   "read"
+      field_mappings: [
+        { placeholder: "id", request_field: "id" }
+      ]
     };
   }
 }
 ```
 
-| フィールド | 説明 |
-| --- | --- |
-| `resource` | リソース識別子テンプレート。`<placeholder>` 形式でリクエストフィールドの値を埋め込めます。 |
-| `action` | 実行するアクション（例: `read`, `write`, `delete`）。 |
-| `field_mappings` | プレースホルダーとリクエストフィールドのマッピング。`placeholder` がテンプレート内の名前、`request_field` がリクエストの proto フィールド名です。 |
+The option is defined in the `policy.v1` protobuf package with field number `50000`.
 
-### 2. インターセプターを登録する
+## field_mappings explanation
+
+`field_mappings` maps placeholder names in the resource template to proto field names on the request message.
+
+| field_mappings field | Meaning |
+| --- | --- |
+| `placeholder` | The name used in the resource template, written as `<name>` (e.g. `"id"` matches `<id>`) |
+| `request_field` | The proto field name on the request message to extract the value from |
+
+Supported scalar field types: `string`, `bytes`, `int32/64`, `uint32/64`, `bool`. `repeated` fields, `map` fields, and nested message types are not supported. If an unsupported type or missing field is encountered, the interceptor returns `codes.Internal`.
+
+Example: for `resource: "items/<id>"` with `field_mappings: [{ placeholder: "id", request_field: "id" }]`, if the request has `id = "42"`, the resolved resource is `"items/42"`.
+
+## Usage example
 
 ```go
 import (
@@ -53,15 +104,21 @@ import (
 
 grpc.NewServer(
     grpc.ChainUnaryInterceptor(
-        policyoption.Interceptor( // 必ず先頭に置く
-            policyoption.WithLogLevel(slog.LevelError), // オプション: ログレベル（デフォルト: LevelError）
+        policyoption.Interceptor(               // must come before policy_verification
+            policyoption.WithLogLevel(slog.LevelWarn),
         ),
-        // ... 他のインターセプター
+        // ... other interceptors
+    ),
+    grpc.ChainStreamInterceptor(
+        policyoption.StreamInterceptor(         // must come before policy_verification
+            policyoption.WithLogLevel(slog.LevelWarn),
+        ),
+        // ... other interceptors
     ),
 )
 ```
 
-### 3. 後続インターセプターでポリシーを取得する
+Reading the resolved policy in a custom interceptor:
 
 ```go
 import policyoption "github.com/o3co/grpc.authz/protobuf_policy_option"
@@ -72,26 +129,4 @@ if ok {
 }
 ```
 
-## 注意点
-
-- **インターセプターの順序**: このインターセプターは `policy_verification.Interceptor` より **前** に登録してください。後に登録すると認可チェックがスキップされます。
-- **ポリシー未定義のメソッド**: `.proto` にポリシーオプションが設定されていないメソッドはそのまま素通りします。認可が必要なメソッドには必ずオプションを設定してください。
-- **対応フィールド型**: スカラー型（`string`, `bytes`, `int32/64`, `uint32/64`, `bool`）のみ対応しています。`repeated` フィールドや `map` フィールド、ネストしたメッセージ型はサポートしていません。
-- **`field_mappings` のバリデーション**: `placeholder` または `request_field` が空文字の場合はリクエスト処理が `Internal` エラーで終了します。
-
-## オプション一覧
-
-| オプション | 説明 | デフォルト |
-| --- | --- | --- |
-| `WithLogLevel(slog.Level)` | ログ出力レベルを設定する | `slog.LevelError` |
-
-## パッケージ構成
-
-```text
-protobuf_policy_option/
-├── interceptor.go         # gRPC インターセプター本体
-├── logger.go              # ログレベル制御
-└── schema/
-    ├── policy.proto       # Policy / FieldMapping メッセージ定義
-    └── policy.pb.go       # protoc-gen-go 生成コード
-```
+See root README for full setup and interceptor chain requirements.
