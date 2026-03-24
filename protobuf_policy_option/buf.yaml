@@ -1,0 +1,4 @@
+version: v2
+modules:
+  - path: schema
+    name: buf.build/o3co/grpc-authz-policy-option
