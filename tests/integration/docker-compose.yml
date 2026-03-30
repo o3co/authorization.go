@@ -1,13 +1,14 @@
 services:
   opa:
     image: openpolicyagent/opa:1.5.0
+    platform: linux/amd64
     command: run --server --addr=0.0.0.0:8181 /policies
     ports:
       - "8181:8181"
     volumes:
       - ./testdata/opa:/policies
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8181/health"]
+      test: ["CMD", "/opa", "eval", "true"]
       interval: 2s
       timeout: 2s
       retries: 10
@@ -23,7 +24,8 @@ services:
     volumes:
       - ./testdata/cedar:/data
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8180/health"]
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8180'"]
       interval: 2s
       timeout: 2s
       retries: 10
+      start_period: 3s
