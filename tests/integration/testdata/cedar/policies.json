@@ -1,0 +1,6 @@
+[
+  {
+    "id": "allow-read-posts",
+    "content": "permit(principal, action == Action::\"read\", resource == Resource::\"posts/123\");"
+  }
+]

@@ -273,6 +273,66 @@ Response → gRPC status code mapping:
 
 The authorization server's response body is never forwarded to the gRPC client — to prevent internal information leakage. It is logged at error level (up to 1 KB) for debugging.
 
+## Alternative backends
+
+The `policy_verification` module works with any authorization backend that implements the `VerifierEndpoint` interface. Built-in adapters:
+
+### Open Policy Agent (OPA)
+
+```go
+import (
+    "time"
+    pvendpoint "github.com/o3co/grpc.authz/policy_verification/endpoint"
+)
+
+verifier, err := pvendpoint.NewOPAEndpoint(
+    "http://opa:8181",       // OPA server URL
+    "authz/allow",           // Rego package/rule path
+    pvendpoint.WithOPATimeout(5 * time.Second),
+)
+```
+
+OPA receives the bearer token, resource, and action in the `input` object:
+
+```json
+{"input": {"resource": "posts/123", "action": "read", "token": "<bearer>"}}
+```
+
+Write a Rego policy that evaluates `allow` to `true` or `false`.
+
+### Cedar agent (permitio/cedar-agent)
+
+```go
+import "context"
+
+verifier, err := pvendpoint.NewCedarAgentEndpoint(
+    "http://cedar-agent:8180",
+    pvendpoint.WithCedarAgentPrincipalPrefix("User"),
+    pvendpoint.WithCedarAgentPrincipalResolver(func(ctx context.Context, token string) string {
+        // extract subject from JWT, or return token as-is
+        return token
+    }),
+)
+```
+
+Cedar agent receives Cedar entity UIDs:
+
+```json
+{"principal": "User::\"subject\"", "action": "Action::\"read\"", "resource": "Resource::\"posts/123\""}
+```
+
+### Custom backend
+
+Implement `endpoint.VerifierEndpoint` for any other authorization system:
+
+```go
+type VerifierEndpoint interface {
+    Verify(ctx context.Context, resource, action string) error
+}
+```
+
+Return `nil` for allow, `status.Error(codes.PermissionDenied, ...)` for deny, or `status.Error(codes.Unauthenticated, ...)` for missing credentials.
+
 ## License
 
 Apache 2.0
