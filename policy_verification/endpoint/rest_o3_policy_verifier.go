@@ -40,9 +40,10 @@ const defaultTimeout = 10 * time.Second
 // timeout など構築後に不要なフィールドをここで管理することで、
 // restO3PolicyVerifierEndpoint の struct を実行時に必要なフィールドのみに絞る。
 type buildConfig struct {
-	timeout             time.Duration
-	maxResponseBodySize int64
-	logger              *slog.Logger
+	timeout              time.Duration
+	maxResponseBodySize  int64
+	logger               *slog.Logger
+	requestIDHeaderKey   string
 }
 
 // Option はo3 REST エンドポイントの設定オプション
@@ -75,12 +76,22 @@ func WithLogLevel(level slog.Level) Option {
 	}
 }
 
+// WithRequestIDHeaderKey sets the HTTP header key for forwarding the request ID
+// to the authorization server. Default is "x-request-id". Set to empty string to
+// disable forwarding.
+func WithRequestIDHeaderKey(key string) Option {
+	return func(c *buildConfig) {
+		c.requestIDHeaderKey = key
+	}
+}
+
 // restO3PolicyVerifierEndpoint は o3 独自規格の REST 認可サービスへの VerifierEndpoint 実装
 type restO3PolicyVerifierEndpoint struct {
-	httpClient          *http.Client
-	verifyURL           string
-	maxResponseBodySize int64
-	logger              *slog.Logger
+	httpClient           *http.Client
+	verifyURL            string
+	maxResponseBodySize  int64
+	logger               *slog.Logger
+	requestIDHeaderKey   string
 }
 
 // NewRESTEndpoint o3 REST 認可エンドポイントのコンストラクタ。
@@ -106,6 +117,7 @@ func NewRESTEndpoint(baseURL string, opts ...Option) (VerifierEndpoint, error) {
 		timeout:             defaultTimeout,
 		maxResponseBodySize: defaultMaxResponseBodySize,
 		logger:              newLogger(slog.LevelError),
+		requestIDHeaderKey:  "x-request-id",
 	}
 	for _, opt := range opts {
 		opt(cfg)
@@ -116,6 +128,7 @@ func NewRESTEndpoint(baseURL string, opts ...Option) (VerifierEndpoint, error) {
 		verifyURL:           base.String(),
 		maxResponseBodySize: cfg.maxResponseBodySize,
 		logger:              cfg.logger,
+		requestIDHeaderKey:  cfg.requestIDHeaderKey,
 	}, nil
 }
 
@@ -172,8 +185,9 @@ func (e *restO3PolicyVerifierEndpoint) Verify(ctx context.Context, resource, act
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", tok.TokenType+" "+tok.Value)
 
-	// x-request-id が存在する場合のみ転送する
-	rt.SetRequestIDHeader(ctx, req)
+	if e.requestIDHeaderKey != "" && requestID != "" {
+		req.Header.Set(e.requestIDHeaderKey, requestID)
+	}
 
 	// --- リクエスト送信 ---------------------------------------------------
 	resp, err := e.httpClient.Do(req)

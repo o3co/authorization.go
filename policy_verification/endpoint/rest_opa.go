@@ -34,9 +34,10 @@ import (
 
 // opaBuildConfig holds construction-time-only settings for NewOPAEndpoint.
 type opaBuildConfig struct {
-	timeout             time.Duration
-	maxResponseBodySize int64
-	logger              *slog.Logger
+	timeout              time.Duration
+	maxResponseBodySize  int64
+	logger               *slog.Logger
+	requestIDHeaderKey   string
 }
 
 // OPAOption configures the OPA REST endpoint.
@@ -70,12 +71,21 @@ func WithOPALogLevel(level slog.Level) OPAOption {
 	}
 }
 
+// WithOPARequestIDHeaderKey sets the HTTP header key for forwarding the request ID
+// to OPA. Default is "x-request-id". Set to empty string to disable forwarding.
+func WithOPARequestIDHeaderKey(key string) OPAOption {
+	return func(c *opaBuildConfig) {
+		c.requestIDHeaderKey = key
+	}
+}
+
 // restOPAEndpoint is a VerifierEndpoint implementation that calls an OPA REST API.
 type restOPAEndpoint struct {
-	httpClient          *http.Client
-	evaluateURL         string
-	maxResponseBodySize int64
-	logger              *slog.Logger
+	httpClient           *http.Client
+	evaluateURL          string
+	maxResponseBodySize  int64
+	logger               *slog.Logger
+	requestIDHeaderKey   string
 }
 
 // opaRequest is the JSON body sent to OPA's data API.
@@ -127,6 +137,7 @@ func NewOPAEndpoint(baseURL, policyPath string, opts ...OPAOption) (VerifierEndp
 		timeout:             defaultTimeout,
 		maxResponseBodySize: defaultMaxResponseBodySize,
 		logger:              newLogger(slog.LevelError),
+		requestIDHeaderKey:  "x-request-id",
 	}
 	for _, opt := range opts {
 		opt(cfg)
@@ -137,6 +148,7 @@ func NewOPAEndpoint(baseURL, policyPath string, opts ...OPAOption) (VerifierEndp
 		evaluateURL:         base.String(),
 		maxResponseBodySize: cfg.maxResponseBodySize,
 		logger:              cfg.logger,
+		requestIDHeaderKey:  cfg.requestIDHeaderKey,
 	}, nil
 }
 
@@ -174,7 +186,9 @@ func (e *restOPAEndpoint) Verify(ctx context.Context, resource, action string) e
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
-	rt.SetRequestIDHeader(ctx, req)
+	if e.requestIDHeaderKey != "" && requestID != "" {
+		req.Header.Set(e.requestIDHeaderKey, requestID)
+	}
 
 	// Send the request.
 	resp, err := e.httpClient.Do(req)

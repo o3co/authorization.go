@@ -441,6 +441,57 @@ func TestVerify_4xx_NotAuthRelated_ReturnsInternal(t *testing.T) {
 	}
 }
 
+// Verify that WithRequestIDHeaderKey changes the forwarded header key.
+func TestVerify_WithRequestIDHeaderKey(t *testing.T) {
+	var capturedHeader string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedHeader = r.Header.Get("X-Correlation-Id")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	ep, err := NewRESTEndpoint(server.URL, WithRequestIDHeaderKey("X-Correlation-Id"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	md := metadata.Pairs("authorization", "Bearer my-token")
+	ctx := metadata.NewIncomingContext(context.Background(), md)
+	ctx = WithRequestID(ctx, "req-custom-789")
+
+	if err := ep.Verify(ctx, "posts", "read"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if capturedHeader != "req-custom-789" {
+		t.Errorf("X-Correlation-Id = %q, want %q", capturedHeader, "req-custom-789")
+	}
+}
+
+// Verify that empty requestIDHeaderKey disables forwarding.
+func TestVerify_WithRequestIDHeaderKey_Empty_DisablesForwarding(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if v := r.Header.Get("x-request-id"); v != "" {
+			t.Errorf("x-request-id should not be set, got %q", v)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	ep, err := NewRESTEndpoint(server.URL, WithRequestIDHeaderKey(""))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	ctx := ctxWithBearerToken("token")
+	ctx = WithRequestID(ctx, "should-not-forward")
+
+	if err := ep.Verify(ctx, "posts", "read"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 // assertGRPCCode は err が gRPC ステータスエラーであり、期待するコードを持つことを検証する
 func assertGRPCCode(t *testing.T, err error, wantCode codes.Code) {
 	t.Helper()
