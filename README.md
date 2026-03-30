@@ -352,3 +352,9 @@ Return `nil` for allow, `status.Error(codes.PermissionDenied, ...)` for deny, or
 ## License
 
 Apache 2.0
+
+## Related Projects
+
+- [auth.provider](https://github.com/o3co/auth.provider) — OAuth 2.0 token issuance
+- [auth.proxy](https://github.com/o3co/auth.proxy) — Token validation reverse proxy
+- [auth](https://github.com/o3co/auth) — Architecture docs and cross-component E2E tests
