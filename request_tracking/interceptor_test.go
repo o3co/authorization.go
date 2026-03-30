@@ -189,6 +189,53 @@ func TestStreamInterceptor_PassesThrough(t *testing.T) {
 	}
 }
 
+// --- Idempotency ---
+
+// Verify that a pre-existing request ID in context is preserved (not overwritten).
+func TestInterceptor_PreservesExistingContextID(t *testing.T) {
+	interceptor := Interceptor()
+
+	ctx := WithRequestID(context.Background(), "pre-existing-id")
+
+	var capturedID string
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		capturedID = RequestIDFromContext(ctx)
+		return nil, nil
+	}
+
+	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/Method"}
+	_, err := interceptor(ctx, nil, info, handler)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if capturedID != "pre-existing-id" {
+		t.Errorf("RequestIDFromContext() = %q, want %q", capturedID, "pre-existing-id")
+	}
+}
+
+// Verify that StreamInterceptor preserves a pre-existing request ID in context.
+func TestStreamInterceptor_PreservesExistingContextID(t *testing.T) {
+	interceptor := StreamInterceptor()
+
+	ctx := WithRequestID(context.Background(), "stream-pre-existing")
+	ss := &mockServerStream{ctx: ctx}
+
+	var capturedID string
+	handler := func(srv interface{}, stream grpc.ServerStream) error {
+		capturedID = RequestIDFromContext(stream.Context())
+		return nil
+	}
+
+	info := &grpc.StreamServerInfo{FullMethod: "/test.Service/StreamMethod"}
+	err := interceptor(nil, ss, info, handler)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if capturedID != "stream-pre-existing" {
+		t.Errorf("RequestIDFromContext() = %q, want %q", capturedID, "stream-pre-existing")
+	}
+}
+
 // --- WithMetadataKey ---
 
 // Verify that a custom metadata key is used to extract the request ID.

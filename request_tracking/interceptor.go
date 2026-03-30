@@ -82,8 +82,11 @@ func Interceptor(opts ...Option) grpc.UnaryServerInterceptor {
 	log, metadataKey := applyOptions(opts)
 
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		requestID := extractOrGenerateRequestID(ctx, metadataKey)
-		ctx = WithRequestID(ctx, requestID)
+		requestID := RequestIDFromContext(ctx)
+		if requestID == "" {
+			requestID = extractOrGenerateRequestID(ctx, metadataKey)
+			ctx = WithRequestID(ctx, requestID)
+		}
 
 		log.Debug("request tracking", "method", info.FullMethod, "x-request-id", requestID)
 
@@ -99,8 +102,11 @@ func StreamInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 
 	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		ctx := ss.Context()
-		requestID := extractOrGenerateRequestID(ctx, metadataKey)
-		ctx = WithRequestID(ctx, requestID)
+		requestID := RequestIDFromContext(ctx)
+		if requestID == "" {
+			requestID = extractOrGenerateRequestID(ctx, metadataKey)
+			ctx = WithRequestID(ctx, requestID)
+		}
 
 		log.Debug("request tracking (stream)", "method", info.FullMethod, "x-request-id", requestID)
 
