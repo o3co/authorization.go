@@ -188,3 +188,79 @@ func TestStreamInterceptor_PassesThrough(t *testing.T) {
 		t.Error("handler was not called")
 	}
 }
+
+// --- WithMetadataKey ---
+
+// Verify that a custom metadata key is used to extract the request ID.
+func TestInterceptor_WithMetadataKey(t *testing.T) {
+	interceptor := Interceptor(WithMetadataKey("x-trace-id"))
+
+	md := metadata.Pairs("x-trace-id", "custom-trace-123")
+	ctx := metadata.NewIncomingContext(context.Background(), md)
+
+	var capturedID string
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		capturedID = RequestIDFromContext(ctx)
+		return nil, nil
+	}
+
+	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/Method"}
+	_, err := interceptor(ctx, nil, info, handler)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if capturedID != "custom-trace-123" {
+		t.Errorf("RequestIDFromContext() = %q, want %q", capturedID, "custom-trace-123")
+	}
+}
+
+// Verify that the default metadata key x-request-id is ignored when a custom key is set.
+func TestInterceptor_WithMetadataKey_IgnoresDefault(t *testing.T) {
+	interceptor := Interceptor(WithMetadataKey("x-trace-id"))
+
+	md := metadata.Pairs("x-request-id", "should-be-ignored")
+	ctx := metadata.NewIncomingContext(context.Background(), md)
+
+	var capturedID string
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		capturedID = RequestIDFromContext(ctx)
+		return nil, nil
+	}
+
+	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/Method"}
+	_, err := interceptor(ctx, nil, info, handler)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Should have generated a new ID since x-trace-id was not present
+	if capturedID == "should-be-ignored" {
+		t.Error("expected default key to be ignored when custom key is set")
+	}
+	if capturedID == "" {
+		t.Error("expected a generated request ID, got empty string")
+	}
+}
+
+// Verify that StreamInterceptor respects WithMetadataKey.
+func TestStreamInterceptor_WithMetadataKey(t *testing.T) {
+	interceptor := StreamInterceptor(WithMetadataKey("x-correlation-id"))
+
+	md := metadata.Pairs("x-correlation-id", "corr-456")
+	ctx := metadata.NewIncomingContext(context.Background(), md)
+	ss := &mockServerStream{ctx: ctx}
+
+	var capturedID string
+	handler := func(srv interface{}, stream grpc.ServerStream) error {
+		capturedID = RequestIDFromContext(stream.Context())
+		return nil
+	}
+
+	info := &grpc.StreamServerInfo{FullMethod: "/test.Service/StreamMethod"}
+	err := interceptor(nil, ss, info, handler)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if capturedID != "corr-456" {
+		t.Errorf("RequestIDFromContext() = %q, want %q", capturedID, "corr-456")
+	}
+}

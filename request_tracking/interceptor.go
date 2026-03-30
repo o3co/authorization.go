@@ -24,7 +24,8 @@ import (
 
 // config holds interceptor configuration.
 type config struct {
-	logLevel slog.Level
+	logLevel    slog.Level
+	metadataKey string
 }
 
 // Option configures the request tracking interceptor.
@@ -37,12 +38,20 @@ func WithLogLevel(level slog.Level) Option {
 	}
 }
 
-// extractOrGenerateRequestID extracts x-request-id from incoming gRPC metadata.
+// WithMetadataKey sets the gRPC metadata key to extract the request ID from.
+// Default is "x-request-id".
+func WithMetadataKey(key string) Option {
+	return func(c *config) {
+		c.metadataKey = key
+	}
+}
+
+// extractOrGenerateRequestID extracts the request ID from the specified gRPC metadata key.
 // If not found or empty, generates a new one.
-func extractOrGenerateRequestID(ctx context.Context) string {
+func extractOrGenerateRequestID(ctx context.Context, metadataKey string) string {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if ok {
-		if values := md["x-request-id"]; len(values) > 0 && values[0] != "" {
+		if values := md[metadataKey]; len(values) > 0 && values[0] != "" {
 			return values[0]
 		}
 	}
@@ -58,22 +67,22 @@ type requestIDStream struct {
 
 func (s *requestIDStream) Context() context.Context { return s.ctx }
 
-// applyOptions applies functional options and returns the configured logger.
-func applyOptions(opts []Option) *slog.Logger {
-	cfg := &config{logLevel: slog.LevelError}
+// applyOptions applies functional options and returns the configured logger and metadata key.
+func applyOptions(opts []Option) (*slog.Logger, string) {
+	cfg := &config{logLevel: slog.LevelError, metadataKey: "x-request-id"}
 	for _, opt := range opts {
 		opt(cfg)
 	}
-	return newLogger(cfg.logLevel)
+	return newLogger(cfg.logLevel), cfg.metadataKey
 }
 
 // Interceptor returns a gRPC UnaryServerInterceptor that extracts or generates
-// x-request-id from incoming metadata and stores it in the context via WithRequestID.
+// a request ID from incoming metadata and stores it in the context via WithRequestID.
 func Interceptor(opts ...Option) grpc.UnaryServerInterceptor {
-	log := applyOptions(opts)
+	log, metadataKey := applyOptions(opts)
 
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		requestID := extractOrGenerateRequestID(ctx)
+		requestID := extractOrGenerateRequestID(ctx, metadataKey)
 		ctx = WithRequestID(ctx, requestID)
 
 		log.Debug("request tracking", "method", info.FullMethod, "x-request-id", requestID)
@@ -83,14 +92,14 @@ func Interceptor(opts ...Option) grpc.UnaryServerInterceptor {
 }
 
 // StreamInterceptor returns a gRPC StreamServerInterceptor that extracts or generates
-// x-request-id from incoming metadata at stream establishment and propagates it
+// a request ID from incoming metadata at stream establishment and propagates it
 // via a wrapped ServerStream.
 func StreamInterceptor(opts ...Option) grpc.StreamServerInterceptor {
-	log := applyOptions(opts)
+	log, metadataKey := applyOptions(opts)
 
 	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		ctx := ss.Context()
-		requestID := extractOrGenerateRequestID(ctx)
+		requestID := extractOrGenerateRequestID(ctx, metadataKey)
 		ctx = WithRequestID(ctx, requestID)
 
 		log.Debug("request tracking (stream)", "method", info.FullMethod, "x-request-id", requestID)
