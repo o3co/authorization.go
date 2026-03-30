@@ -2,9 +2,7 @@ module github.com/o3co/grpc.authz/request_tracking
 
 go 1.25.5
 
-require (
-	google.golang.org/grpc v1.79.2
-)
+require google.golang.org/grpc v1.79.2
 
 require (
 	golang.org/x/net v0.48.0 // indirect
