@@ -22,7 +22,7 @@ import (
 // Verify that generateRequestID conforms to the "YYYYMMDDHHmmss_<hex>" format.
 func TestGenerateRequestID_Format(t *testing.T) {
 	id := generateRequestID()
-	pattern := regexp.MustCompile(`^\d{14}_[0-9a-f]+$`)
+	pattern := regexp.MustCompile(`^\d{14}_[0-9a-f]{32}$`)
 	if !pattern.MatchString(id) {
 		t.Errorf("id %q does not match expected pattern YYYYMMDDHHmmss_<hex>", id)
 	}
