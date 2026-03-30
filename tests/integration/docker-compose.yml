@@ -1,17 +1,12 @@
 services:
   opa:
     image: openpolicyagent/opa:1.5.0
-    platform: linux/amd64
+    platform: ${OPA_PLATFORM:-linux/amd64}
     command: run --server --addr=0.0.0.0:8181 /policies
     ports:
       - "8181:8181"
     volumes:
       - ./testdata/opa:/policies
-    healthcheck:
-      test: ["CMD", "/opa", "eval", "true"]
-      interval: 2s
-      timeout: 2s
-      retries: 10
 
   cedar-agent:
     image: permitio/cedar-agent:0.2.2
@@ -23,9 +18,3 @@ services:
       CEDAR_AGENT_DATA: /data/entities.json
     volumes:
       - ./testdata/cedar:/data
-    healthcheck:
-      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8180'"]
-      interval: 2s
-      timeout: 2s
-      retries: 10
-      start_period: 3s
