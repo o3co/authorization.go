@@ -26,6 +26,8 @@ import (
 	"strings"
 	"time"
 
+	rt "github.com/o3co/grpc.authz/request_tracking"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -142,23 +144,6 @@ func getToken(ctx context.Context) (*token, error) {
 	return &token{TokenType: parts[0], Value: parts[1]}, nil
 }
 
-// getRequestID context または gRPC incoming metadata から x-request-id を取得する。
-// context に値がある場合はそちらを優先し、なければ metadata を参照する。
-// どちらにも存在しない場合は空文字を返す。
-func getRequestID(ctx context.Context) string {
-	if v := RequestIDFromContext(ctx); v != "" {
-		return v
-	}
-	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return ""
-	}
-	if values := md["x-request-id"]; len(values) > 0 {
-		return values[0]
-	}
-	return ""
-}
-
 // Verify 権限チェックを実行する。
 func (e *restO3PolicyVerifierEndpoint) Verify(ctx context.Context, resource, action string) error {
 	// --- 認可トークン取得 -------------------------------------------------
@@ -181,16 +166,14 @@ func (e *restO3PolicyVerifierEndpoint) Verify(ctx context.Context, resource, act
 		return status.Errorf(codes.Internal, "failed to create request: %v", err)
 	}
 
-	requestID := getRequestID(ctx)
+	requestID := rt.RequestIDFromContext(ctx)
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", tok.TokenType+" "+tok.Value)
 
 	// x-request-id が存在する場合のみ転送する
-	if requestID != "" {
-		req.Header.Set("x-request-id", requestID)
-	}
+	rt.SetRequestIDHeader(ctx, req)
 
 	// --- リクエスト送信 ---------------------------------------------------
 	resp, err := e.httpClient.Do(req)

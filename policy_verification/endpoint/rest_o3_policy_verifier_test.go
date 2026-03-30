@@ -209,47 +209,6 @@ func TestGetToken_BearerToken_ReturnsCorrectFields(t *testing.T) {
 	}
 }
 
-// --- getRequestID ---
-
-// WithRequestID で context に設定した値を取得できることを確認する。
-func TestGetRequestID_FromContextValue(t *testing.T) {
-	ctx := WithRequestID(context.Background(), "ctx-request-id")
-	got := getRequestID(ctx)
-	if got != "ctx-request-id" {
-		t.Errorf("got %q, want %q", got, "ctx-request-id")
-	}
-}
-
-// context に値がない場合は gRPC incoming metadata の x-request-id を返すことを確認する。
-func TestGetRequestID_FromMetadata(t *testing.T) {
-	md := metadata.Pairs("x-request-id", "md-request-id")
-	ctx := metadata.NewIncomingContext(context.Background(), md)
-	got := getRequestID(ctx)
-	if got != "md-request-id" {
-		t.Errorf("got %q, want %q", got, "md-request-id")
-	}
-}
-
-// context 値と metadata の両方がある場合は context 値を優先することを確認する。
-func TestGetRequestID_ContextTakesPrecedenceOverMetadata(t *testing.T) {
-	md := metadata.Pairs("x-request-id", "md-id")
-	ctx := metadata.NewIncomingContext(context.Background(), md)
-	ctx = WithRequestID(ctx, "ctx-id")
-	got := getRequestID(ctx)
-	if got != "ctx-id" {
-		t.Errorf("got %q, want %q", got, "ctx-id")
-	}
-}
-
-// context にも metadata にも x-request-id がない場合は空文字を返すことを確認する。
-func TestGetRequestID_NeitherContextNorMetadata_ReturnsEmpty(t *testing.T) {
-	ctx := context.Background()
-	got := getRequestID(ctx)
-	if got != "" {
-		t.Errorf("got %q, want empty string", got)
-	}
-}
-
 // --- Verify (httptest を使った結合テスト) ---
 
 func newTestEndpoint(t *testing.T, serverURL string) VerifierEndpoint {

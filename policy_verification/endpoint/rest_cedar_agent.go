@@ -26,6 +26,8 @@ import (
 	"strings"
 	"time"
 
+	rt "github.com/o3co/grpc.authz/request_tracking"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -213,14 +215,12 @@ func (e *restCedarAgentEndpoint) Verify(ctx context.Context, resource, action st
 		return status.Errorf(codes.Internal, "failed to create Cedar agent request: %v", err)
 	}
 
-	requestID := getRequestID(ctx)
+	requestID := rt.RequestIDFromContext(ctx)
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
-	if requestID != "" {
-		req.Header.Set("x-request-id", requestID)
-	}
+	rt.SetRequestIDHeader(ctx, req)
 
 	// Send the request.
 	resp, err := e.httpClient.Do(req)

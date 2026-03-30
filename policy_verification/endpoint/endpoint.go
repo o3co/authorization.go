@@ -14,23 +14,27 @@
 
 package endpoint
 
-import "context"
+import (
+	"context"
 
-// VerifierEndpoint はポリシー検証を行うエンドポイントのインターフェース。
-// 実装は REST、gRPC など複数想定されるが、現状は REST のみ。
+	rt "github.com/o3co/grpc.authz/request_tracking"
+)
+
+// VerifierEndpoint is the interface for policy verification endpoints.
 type VerifierEndpoint interface {
 	Verify(ctx context.Context, resource, action string) error
 }
 
-type contextKey struct{}
-
-// WithRequestID x-request-id を context に保存する（interceptor から呼び出す）。
+// WithRequestID stores the request ID in the context.
+//
+// Deprecated: Use requesttracking.WithRequestID directly.
 func WithRequestID(ctx context.Context, requestID string) context.Context {
-	return context.WithValue(ctx, contextKey{}, requestID)
+	return rt.WithRequestID(ctx, requestID)
 }
 
-// RequestIDFromContext context から x-request-id を取得する。
+// RequestIDFromContext retrieves the request ID from the context.
+//
+// Deprecated: Use requesttracking.RequestIDFromContext directly.
 func RequestIDFromContext(ctx context.Context) string {
-	v, _ := ctx.Value(contextKey{}).(string)
-	return v
+	return rt.RequestIDFromContext(ctx)
 }
