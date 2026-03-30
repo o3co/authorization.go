@@ -12,10 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package endpoint defines the VerifierEndpoint interface and provides a
-// REST-based implementation for the o3 authorization server.
+// Package endpoint defines the [VerifierEndpoint] interface and provides
+// implementations for multiple authorization backends:
 //
-// To use a custom authorization backend, implement the VerifierEndpoint
+//   - [NewRESTEndpoint] — o3 policy-verifier (POST /verify)
+//   - [NewOPAEndpoint] — Open Policy Agent (POST /v1/data/{path})
+//   - [NewCedarAgentEndpoint] — permitio/cedar-agent (POST /v1/is_authorized)
+//
+// To use a custom authorization backend, implement the [VerifierEndpoint]
 // interface and pass it to [policyverification.Interceptor]:
 //
 //	type myVerifier struct{}
