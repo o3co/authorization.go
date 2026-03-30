@@ -5,6 +5,8 @@
 [![Go Reference (protobuf_policy_option)](https://pkg.go.dev/badge/github.com/o3co/grpc.authz/protobuf_policy_option.svg)](https://pkg.go.dev/github.com/o3co/grpc.authz/protobuf_policy_option)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
+[日本語](README.ja.md)
+
 `grpc.authz` is a gRPC authorization middleware library for Go. It lets you declare access policy (resource + action) directly in `.proto` method options, then enforce it automatically via interceptors — no hand-written auth checks scattered across your handlers.
 
 ## Why
