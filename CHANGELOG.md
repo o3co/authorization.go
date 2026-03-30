@@ -10,6 +10,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.2.1] - 2026-03-30
+
+### Added
+
+- `NewStaticEndpoint` — local rule evaluation without external service, supports exact match, wildcard (`*`), and prefix wildcards (`posts/*`)
+- Example functions for pkg.go.dev documentation (`ExampleNewRESTEndpoint`, `ExampleNewOPAEndpoint`, `ExampleNewCedarAgentEndpoint`, `ExampleNewStaticEndpoint`, `ExampleAllow`, `ExampleDeny`, `ExampleFunc`)
+- README.ja.md updated with v0.2.0 content (OPA, Cedar, Static backends)
+- Language toggle links between README.md and README.ja.md
+
+### Fixed
+
+- Add Apache 2.0 license headers to integration and example test files
+- Document `crypto/rand.Read` error suppression safety (Go 1.20+ guarantee)
+- Fix docker-compose healthchecks: use host-side curl instead of in-container tools (OPA scratch image has no shell)
+- Make OPA platform configurable via `OPA_PLATFORM` env var (default `linux/amd64`)
+- Add nil check to `WithCedarAgentPrincipalResolver` (panics on nil, matching other option constructors)
+- Add missing `time` and `context` imports in README code examples
+
+---
+
 ## [0.2.0] - 2026-03-30
 
 ### Added
@@ -41,6 +61,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-[Unreleased]: https://github.com/o3co/grpc.authz/compare/policy_verification/v0.2.0...HEAD
+[Unreleased]: https://github.com/o3co/grpc.authz/compare/policy_verification/v0.2.1...HEAD
+[0.2.1]: https://github.com/o3co/grpc.authz/compare/policy_verification/v0.2.0...policy_verification/v0.2.1
 [0.2.0]: https://github.com/o3co/grpc.authz/compare/policy_verification/v0.1.0...policy_verification/v0.2.0
 [0.1.0]: https://github.com/o3co/grpc.authz/releases/tag/policy_verification/v0.1.0
