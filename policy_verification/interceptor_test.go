@@ -25,7 +25,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	policyoption "github.com/o3co/grpc.authz/protobuf_policy_option"
-	"github.com/o3co/grpc.authz/policy_verification/endpoint"
+	rt "github.com/o3co/grpc.authz/request_tracking"
 	"github.com/o3co/grpc.authz/policy_verification/endpointtest"
 )
 
@@ -199,7 +199,7 @@ func TestInterceptor_RequestID_PropagatedToContext(t *testing.T) {
 		t.Fatal("handler was not called")
 	}
 
-	gotID := endpoint.RequestIDFromContext(capturedCtx)
+	gotID := rt.RequestIDFromContext(capturedCtx)
 	if gotID != "test-request-id-xyz" {
 		t.Errorf("x-request-id in context = %q, want %q", gotID, "test-request-id-xyz")
 	}
@@ -230,8 +230,35 @@ func TestInterceptor_RequestID_GeneratedWhenAbsent(t *testing.T) {
 		t.Fatal("handler was not called")
 	}
 
-	gotID := endpoint.RequestIDFromContext(capturedCtx)
+	gotID := rt.RequestIDFromContext(capturedCtx)
 	if gotID == "" {
 		t.Error("expected a generated request ID in context, got empty string")
+	}
+}
+
+// When request_tracking.Interceptor has already run and set a request ID in the
+// context, policy_verification should use the existing ID instead of generating a new one.
+func TestInterceptor_UsesExistingContextID(t *testing.T) {
+	ep := endpointtest.Allow()
+
+	var capturedID string
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		capturedID = rt.RequestIDFromContext(ctx)
+		return nil, nil
+	}
+
+	// Simulate request_tracking having already run by pre-setting the context value.
+	ctx := rt.WithRequestID(context.Background(), "pre-existing-id")
+
+	_, err := chainInterceptors(
+		ctx, nil, "/unknown.Service/UnknownMethod", handler,
+		policyoption.Interceptor(),
+		Interceptor(ep),
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if capturedID != "pre-existing-id" {
+		t.Errorf("RequestIDFromContext() = %q, want %q", capturedID, "pre-existing-id")
 	}
 }

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/o3co/grpc.authz/policy_verification/endpoint"
+	rt "github.com/o3co/grpc.authz/request_tracking"
 	policy "github.com/o3co/grpc.authz/protobuf_policy_option"
 
 	"google.golang.org/grpc"
@@ -126,8 +127,11 @@ func StreamInterceptor(verifierEndpoint endpoint.VerifierEndpoint, opts ...Optio
 
 	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		ctx := ss.Context()
-		requestID := extractOrGenerateRequestID(ctx)
-		ctx = endpoint.WithRequestID(ctx, requestID)
+		requestID := rt.RequestIDFromContext(ctx)
+		if requestID == "" {
+			requestID = extractOrGenerateRequestID(ctx)
+			ctx = rt.WithRequestID(ctx, requestID)
+		}
 
 		log.Debug("processing stream method", "method", info.FullMethod, "x-request-id", requestID)
 
@@ -171,8 +175,11 @@ func Interceptor(verifierEndpoint endpoint.VerifierEndpoint, opts ...Option) grp
 	log := newLogger(cfg.logLevel)
 
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		requestID := extractOrGenerateRequestID(ctx)
-		ctx = endpoint.WithRequestID(ctx, requestID)
+		requestID := rt.RequestIDFromContext(ctx)
+		if requestID == "" {
+			requestID = extractOrGenerateRequestID(ctx)
+			ctx = rt.WithRequestID(ctx, requestID)
+		}
 
 		log.Debug("processing method", "method", info.FullMethod, "x-request-id", requestID)
 
