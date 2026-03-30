@@ -19,7 +19,7 @@ import (
 	"testing"
 )
 
-// generateRequestID が "YYYYMMDDHHmmss_<hex>" のフォーマットに準拠することを確認する。
+// Verify that generateRequestID conforms to the "YYYYMMDDHHmmss_<hex>" format.
 func TestGenerateRequestID_Format(t *testing.T) {
 	id := generateRequestID()
 	pattern := regexp.MustCompile(`^\d{14}_[0-9a-f]+$`)
@@ -28,7 +28,7 @@ func TestGenerateRequestID_Format(t *testing.T) {
 	}
 }
 
-// 連続して生成した 100件の ID がすべて異なることを確認する。
+// Verify that 100 consecutively generated IDs are all unique.
 func TestGenerateRequestID_Uniqueness(t *testing.T) {
 	seen := make(map[string]struct{})
 	for range 100 {

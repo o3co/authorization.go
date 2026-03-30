@@ -24,7 +24,7 @@ import (
 
 // --- Unary Interceptor ---
 
-// metadata の x-request-id を handler の context から取得できることを確認する。
+// Verify that x-request-id from metadata can be retrieved from the handler's context.
 func TestInterceptor_ExtractsFromMetadata(t *testing.T) {
 	interceptor := Interceptor()
 
@@ -47,7 +47,7 @@ func TestInterceptor_ExtractsFromMetadata(t *testing.T) {
 	}
 }
 
-// metadata に x-request-id がない場合は自動生成した ID が context に入ることを確認する。
+// Verify that an auto-generated ID is added to context when x-request-id is absent from metadata.
 func TestInterceptor_GeneratesWhenAbsent(t *testing.T) {
 	interceptor := Interceptor()
 
@@ -67,7 +67,7 @@ func TestInterceptor_GeneratesWhenAbsent(t *testing.T) {
 	}
 }
 
-// x-request-id が空文字の場合は新しい ID を生成することを確認する。
+// Verify that a new ID is generated when x-request-id is empty.
 func TestInterceptor_GeneratesWhenEmpty(t *testing.T) {
 	interceptor := Interceptor()
 
@@ -90,7 +90,7 @@ func TestInterceptor_GeneratesWhenEmpty(t *testing.T) {
 	}
 }
 
-// handler の返り値がそのまま返されることを確認する（パススルー動作）。
+// Verify that the handler's return value is passed through unchanged (passthrough behavior).
 func TestInterceptor_PassesThrough(t *testing.T) {
 	interceptor := Interceptor()
 
@@ -122,7 +122,7 @@ func (m *mockServerStream) SetHeader(metadata.MD) error   { return nil }
 func (m *mockServerStream) SendHeader(metadata.MD) error  { return nil }
 func (m *mockServerStream) SetTrailer(metadata.MD)        {}
 
-// Stream handler が受け取る context に x-request-id が含まれることを確認する。
+// Verify that the context received by the stream handler includes x-request-id.
 func TestStreamInterceptor_PropagatesContext(t *testing.T) {
 	interceptor := StreamInterceptor()
 
@@ -146,7 +146,7 @@ func TestStreamInterceptor_PropagatesContext(t *testing.T) {
 	}
 }
 
-// metadata がない場合は自動生成した ID が stream context に入ることを確認する。
+// Verify that an auto-generated ID is added to stream context when metadata is absent.
 func TestStreamInterceptor_GeneratesWhenAbsent(t *testing.T) {
 	interceptor := StreamInterceptor()
 
@@ -168,7 +168,7 @@ func TestStreamInterceptor_GeneratesWhenAbsent(t *testing.T) {
 	}
 }
 
-// handler の返り値がそのまま返されることを確認する（パススルー動作）。
+// Verify that the handler's return value is passed through unchanged (passthrough behavior).
 func TestStreamInterceptor_PassesThrough(t *testing.T) {
 	interceptor := StreamInterceptor()
 	ss := &mockServerStream{ctx: context.Background()}

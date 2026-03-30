@@ -20,7 +20,7 @@ import (
 	"testing"
 )
 
-// context に request ID がある場合は HTTP ヘッダーに設定されることを確認する。
+// Verify that the request ID is set in HTTP headers when it exists in context.
 func TestSetRequestIDHeader_SetsWhenPresent(t *testing.T) {
 	ctx := WithRequestID(context.Background(), "req-id-456")
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "http://example.com", nil)
@@ -34,7 +34,7 @@ func TestSetRequestIDHeader_SetsWhenPresent(t *testing.T) {
 	}
 }
 
-// context に request ID がない場合はヘッダーを設定せず false を返すことを確認する。
+// Verify that false is returned and no header is set when request ID is absent from context.
 func TestSetRequestIDHeader_SkipsWhenAbsent(t *testing.T) {
 	ctx := context.Background()
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "http://example.com", nil)
@@ -48,7 +48,7 @@ func TestSetRequestIDHeader_SkipsWhenAbsent(t *testing.T) {
 	}
 }
 
-// 空文字の request ID はヘッダーに設定しないことを確認する。
+// Verify that an empty request ID is not set in the header.
 func TestSetRequestIDHeader_SkipsWhenEmpty(t *testing.T) {
 	ctx := WithRequestID(context.Background(), "")
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "http://example.com", nil)

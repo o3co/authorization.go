@@ -19,7 +19,7 @@ import (
 	"testing"
 )
 
-// WithRequestID で保存した値を RequestIDFromContext で取得できることを確認する。
+// Verify that a value stored with WithRequestID can be retrieved with RequestIDFromContext.
 func TestWithRequestID_RoundTrip(t *testing.T) {
 	ctx := WithRequestID(context.Background(), "test-id-123")
 	got := RequestIDFromContext(ctx)
@@ -28,7 +28,7 @@ func TestWithRequestID_RoundTrip(t *testing.T) {
 	}
 }
 
-// context に RequestID が未設定の場合は空文字を返すことを確認する。
+// Verify that an empty string is returned when RequestID is not set in context.
 func TestRequestIDFromContext_Empty(t *testing.T) {
 	ctx := context.Background()
 	got := RequestIDFromContext(ctx)
@@ -37,7 +37,7 @@ func TestRequestIDFromContext_Empty(t *testing.T) {
 	}
 }
 
-// 上書きした場合は最新の値が取得されることを確認する。
+// Verify that the latest value is retrieved when the request ID is overwritten.
 func TestWithRequestID_Overwrite(t *testing.T) {
 	ctx := WithRequestID(context.Background(), "first")
 	ctx = WithRequestID(ctx, "second")
