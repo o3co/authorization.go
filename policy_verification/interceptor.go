@@ -37,6 +37,8 @@ func generateRequestID() string {
 	timestamp := now.Format("20060102150405")
 
 	var b [16]byte
+	// crypto/rand.Read always returns len(b) and nil error on supported platforms (Go 1.20+).
+	// It panics only if the OS random source is unavailable, which is unrecoverable.
 	_, _ = rand.Read(b[:])
 	// UUID v4: version bits
 	b[6] = (b[6] & 0x0f) | 0x40
