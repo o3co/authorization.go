@@ -277,6 +277,20 @@ The authorization server's response body is never forwarded to the gRPC client â
 
 The `policy_verification` module works with any authorization backend that implements the `VerifierEndpoint` interface. Built-in adapters:
 
+### Static rules (no external service)
+
+```go
+import pvendpoint "github.com/o3co/grpc.authz/policy_verification/endpoint"
+
+verifier := pvendpoint.NewStaticEndpoint([]pvendpoint.StaticRule{
+    {Resource: "posts", Action: "list"},
+    {Resource: "posts/*", Action: "read"},      // prefix wildcard
+    {Resource: "users", Action: "*"},            // any action
+})
+```
+
+Rules are evaluated locally â€” no external service needed. Supports exact match, `*` (match all), and prefix wildcards (`posts/*`). Useful for development, simple deployments, or as a starting point before introducing OPA or Cedar.
+
 ### Open Policy Agent (OPA)
 
 ```go

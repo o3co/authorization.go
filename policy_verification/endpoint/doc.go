@@ -15,6 +15,7 @@
 // Package endpoint defines the [VerifierEndpoint] interface and provides
 // implementations for multiple authorization backends:
 //
+//   - [NewStaticEndpoint] — local rule evaluation (no external service)
 //   - [NewRESTEndpoint] — o3 policy-verifier (POST /verify)
 //   - [NewOPAEndpoint] — Open Policy Agent (POST /v1/data/{path})
 //   - [NewCedarAgentEndpoint] — permitio/cedar-agent (POST /v1/is_authorized)

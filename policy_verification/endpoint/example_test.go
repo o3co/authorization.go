@@ -63,6 +63,22 @@ func ExampleNewCedarAgentEndpoint() {
 	_ = verifier
 }
 
+func ExampleNewStaticEndpoint() {
+	verifier := endpoint.NewStaticEndpoint([]endpoint.StaticRule{
+		{Resource: "posts", Action: "list"},
+		{Resource: "posts/*", Action: "read"},
+		{Resource: "posts/*", Action: "update"},
+		{Resource: "users", Action: "list"},
+	})
+
+	// No external service needed. Rules are evaluated locally.
+	// Use verifier with policy_verification.Interceptor:
+	//   policyverification.Interceptor(verifier)
+	fmt.Println("verifier created")
+	_ = verifier
+	// Output: verifier created
+}
+
 func ExampleNewCedarAgentEndpoint_customPrefixes() {
 	verifier, err := endpoint.NewCedarAgentEndpoint(
 		"http://cedar-agent:8180",
