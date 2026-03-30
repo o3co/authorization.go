@@ -10,6 +10,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.2.0] - 2026-03-30
+
+### Added
+
+- `NewOPAEndpoint` — Open Policy Agent REST adapter (`POST /v1/data/{path}`)
+- `NewCedarAgentEndpoint` — permitio/cedar-agent REST adapter (`POST /v1/is_authorized`) with configurable entity prefixes and principal resolver
+- `NewStaticEndpoint` — local rule evaluation without external service, supports exact match, wildcard (`*`), and prefix wildcards (`posts/*`)
+- Docker-based integration tests for OPA and Cedar agent (`//go:build integration`)
+- Example functions for pkg.go.dev documentation
+- README "Alternative backends" section with usage examples for all built-in adapters
+
+---
+
 ## [0.1.0] - 2026-03-19
 
 ### Added
@@ -28,5 +41,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-[Unreleased]: https://github.com/o3co/grpc.authz/compare/policy_verification/v0.1.0...HEAD
+[Unreleased]: https://github.com/o3co/grpc.authz/compare/policy_verification/v0.2.0...HEAD
+[0.2.0]: https://github.com/o3co/grpc.authz/compare/policy_verification/v0.1.0...policy_verification/v0.2.0
 [0.1.0]: https://github.com/o3co/grpc.authz/releases/tag/policy_verification/v0.1.0
