@@ -99,6 +99,9 @@ func WithCedarAgentResourcePrefix(prefix string) CedarAgentOption {
 // WithCedarAgentPrincipalResolver sets a custom function to resolve the principal ID from the
 // raw bearer token. The default resolver returns the token value as-is.
 func WithCedarAgentPrincipalResolver(fn func(ctx context.Context, token string) string) CedarAgentOption {
+	if fn == nil {
+		panic("principalResolver must not be nil")
+	}
 	return func(c *cedarAgentBuildConfig) {
 		c.principalResolver = fn
 	}

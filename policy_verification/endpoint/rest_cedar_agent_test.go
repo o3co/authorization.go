@@ -139,6 +139,16 @@ func TestWithCedarAgentMaxResponseBodySize_Zero_Panics(t *testing.T) {
 	WithCedarAgentMaxResponseBodySize(0)
 }
 
+// TestWithCedarAgentPrincipalResolver_Nil_Panics verifies that a nil resolver panics.
+func TestWithCedarAgentPrincipalResolver_Nil_Panics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic for nil resolver")
+		}
+	}()
+	WithCedarAgentPrincipalResolver(nil)
+}
+
 // --- CedarAgentEndpoint.Verify tests ---
 
 func newTestCedarAgentEndpoint(t *testing.T, serverURL string, opts ...CedarAgentOption) VerifierEndpoint {

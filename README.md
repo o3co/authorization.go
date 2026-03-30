@@ -280,7 +280,10 @@ The `policy_verification` module works with any authorization backend that imple
 ### Open Policy Agent (OPA)
 
 ```go
-import pvendpoint "github.com/o3co/grpc.authz/policy_verification/endpoint"
+import (
+    "time"
+    pvendpoint "github.com/o3co/grpc.authz/policy_verification/endpoint"
+)
 
 verifier, err := pvendpoint.NewOPAEndpoint(
     "http://opa:8181",       // OPA server URL
@@ -300,6 +303,8 @@ Write a Rego policy that evaluates `allow` to `true` or `false`.
 ### Cedar agent (permitio/cedar-agent)
 
 ```go
+import "context"
+
 verifier, err := pvendpoint.NewCedarAgentEndpoint(
     "http://cedar-agent:8180",
     pvendpoint.WithCedarAgentPrincipalPrefix("User"),
