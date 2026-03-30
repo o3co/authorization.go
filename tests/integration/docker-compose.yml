@@ -1,0 +1,29 @@
+services:
+  opa:
+    image: openpolicyagent/opa:latest
+    command: run --server --addr=0.0.0.0:8181 /policies
+    ports:
+      - "8181:8181"
+    volumes:
+      - ./testdata/opa:/policies
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8181/health"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+
+  cedar-agent:
+    image: permitio/cedar-agent:0.2.2
+    ports:
+      - "8180:8180"
+    environment:
+      CEDAR_AGENT_ADDR: "0.0.0.0"
+      CEDAR_AGENT_POLICIES: /data/policies.json
+      CEDAR_AGENT_DATA: /data/entities.json
+    volumes:
+      - ./testdata/cedar:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8180/health"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
