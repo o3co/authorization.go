@@ -7,13 +7,11 @@
 
 [日本語](README.ja.md)
 
-`grpc.authz` is a gRPC authorization middleware library for Go. It lets you declare access policy (resource + action) directly in `.proto` method options, then enforce it automatically via interceptors — no hand-written auth checks scattered across your handlers.
+`grpc.authz` is a gRPC authorization middleware library for Go. Declares access policy (resource + action) in `.proto` method options and enforces it via interceptors. Two independent modules: `protobuf_policy_option` (policy declaration/resolution) and `policy_verification` (enforcement against an authorization backend).
 
 ## Why
 
-When authorization policy lives in the code, it drifts away from the API contract. Reviews miss it, refactors break it, and every new RPC needs a boilerplate check. By co-locating policy with the method definition in `.proto`, the rules are visible in the same place the API is designed, easy to audit in code review, and automatically enforced at runtime.
-
-`grpc.authz` is intentionally lightweight. Teams already using protobuf don't need the full weight of OPA or Casbin — they just need a clean place to declare "who can do what to which resource" and a reliable way to enforce it.
+Authorization policy scattered across handler code drifts from the API contract — missed in reviews, broken by refactors, requiring boilerplate per RPC. Co-locating policy with the `.proto` method definition makes rules visible where the API is designed, auditable in code review, and automatically enforced at runtime.
 
 ## How it works
 
