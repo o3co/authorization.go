@@ -68,7 +68,8 @@ func TestRequestIDHandler_WithAttributeKey(t *testing.T) {
 	}
 }
 
-// Verify that WithGroup works correctly with the handler.
+// Verify that WithGroup scopes the request ID attribute inside the group,
+// following standard slog behavior.
 func TestRequestIDHandler_WithGroup(t *testing.T) {
 	var buf bytes.Buffer
 	base := slog.NewTextHandler(&buf, &slog.HandlerOptions{})
@@ -79,9 +80,9 @@ func TestRequestIDHandler_WithGroup(t *testing.T) {
 	logger.InfoContext(ctx, "hello")
 
 	output := buf.String()
-	// x-request-id should be at top level, not inside the group
-	if !bytes.Contains([]byte(output), []byte("x-request-id=grouped-id")) {
-		t.Errorf("expected x-request-id=grouped-id in log output, got: %s", output)
+	// slog groups scope all subsequent attributes, including injected ones
+	if !bytes.Contains([]byte(output), []byte("req.x-request-id=grouped-id")) {
+		t.Errorf("expected req.x-request-id=grouped-id in log output, got: %s", output)
 	}
 }
 
