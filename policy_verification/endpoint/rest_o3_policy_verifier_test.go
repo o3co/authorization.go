@@ -23,6 +23,8 @@ import (
 	"testing"
 	"time"
 
+	rt "github.com/o3co/grpc.authz/request_tracking"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -209,47 +211,6 @@ func TestGetToken_BearerToken_ReturnsCorrectFields(t *testing.T) {
 	}
 }
 
-// --- getRequestID ---
-
-// WithRequestID で context に設定した値を取得できることを確認する。
-func TestGetRequestID_FromContextValue(t *testing.T) {
-	ctx := WithRequestID(context.Background(), "ctx-request-id")
-	got := getRequestID(ctx)
-	if got != "ctx-request-id" {
-		t.Errorf("got %q, want %q", got, "ctx-request-id")
-	}
-}
-
-// context に値がない場合は gRPC incoming metadata の x-request-id を返すことを確認する。
-func TestGetRequestID_FromMetadata(t *testing.T) {
-	md := metadata.Pairs("x-request-id", "md-request-id")
-	ctx := metadata.NewIncomingContext(context.Background(), md)
-	got := getRequestID(ctx)
-	if got != "md-request-id" {
-		t.Errorf("got %q, want %q", got, "md-request-id")
-	}
-}
-
-// context 値と metadata の両方がある場合は context 値を優先することを確認する。
-func TestGetRequestID_ContextTakesPrecedenceOverMetadata(t *testing.T) {
-	md := metadata.Pairs("x-request-id", "md-id")
-	ctx := metadata.NewIncomingContext(context.Background(), md)
-	ctx = WithRequestID(ctx, "ctx-id")
-	got := getRequestID(ctx)
-	if got != "ctx-id" {
-		t.Errorf("got %q, want %q", got, "ctx-id")
-	}
-}
-
-// context にも metadata にも x-request-id がない場合は空文字を返すことを確認する。
-func TestGetRequestID_NeitherContextNorMetadata_ReturnsEmpty(t *testing.T) {
-	ctx := context.Background()
-	got := getRequestID(ctx)
-	if got != "" {
-		t.Errorf("got %q, want empty string", got)
-	}
-}
-
 // --- Verify (httptest を使った結合テスト) ---
 
 func newTestEndpoint(t *testing.T, serverURL string) VerifierEndpoint {
@@ -345,7 +306,7 @@ func TestVerify_RequestHeaders_SetCorrectly(t *testing.T) {
 	ep := newTestEndpoint(t, server.URL)
 	md := metadata.Pairs("authorization", "Bearer my-token")
 	ctx := metadata.NewIncomingContext(context.Background(), md)
-	ctx = WithRequestID(ctx, "req-id-456")
+	ctx = rt.WithRequestID(ctx, "req-id-456")
 
 	if err := ep.Verify(ctx, "posts", "read"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -479,6 +440,57 @@ func TestVerify_4xx_NotAuthRelated_ReturnsInternal(t *testing.T) {
 			err := ep.Verify(ctxWithBearerToken("token"), "posts", "read")
 			assertGRPCCode(t, err, codes.Internal)
 		})
+	}
+}
+
+// Verify that WithRequestIDHeaderKey changes the forwarded header key.
+func TestVerify_WithRequestIDHeaderKey(t *testing.T) {
+	var capturedHeader string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedHeader = r.Header.Get("X-Correlation-Id")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	ep, err := NewRESTEndpoint(server.URL, WithRequestIDHeaderKey("X-Correlation-Id"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	md := metadata.Pairs("authorization", "Bearer my-token")
+	ctx := metadata.NewIncomingContext(context.Background(), md)
+	ctx = rt.WithRequestID(ctx, "req-custom-789")
+
+	if err := ep.Verify(ctx, "posts", "read"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if capturedHeader != "req-custom-789" {
+		t.Errorf("X-Correlation-Id = %q, want %q", capturedHeader, "req-custom-789")
+	}
+}
+
+// Verify that empty requestIDHeaderKey disables forwarding.
+func TestVerify_WithRequestIDHeaderKey_Empty_DisablesForwarding(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if v := r.Header.Get("x-request-id"); v != "" {
+			t.Errorf("x-request-id should not be set, got %q", v)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	ep, err := NewRESTEndpoint(server.URL, WithRequestIDHeaderKey(""))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	ctx := ctxWithBearerToken("token")
+	ctx = rt.WithRequestID(ctx, "should-not-forward")
+
+	if err := ep.Verify(ctx, "posts", "read"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

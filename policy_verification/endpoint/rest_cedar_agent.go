@@ -26,19 +26,22 @@ import (
 	"strings"
 	"time"
 
+	rt "github.com/o3co/grpc.authz/request_tracking"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 // cedarAgentBuildConfig holds construction-time-only settings for NewCedarAgentEndpoint.
 type cedarAgentBuildConfig struct {
-	timeout             time.Duration
-	maxResponseBodySize int64
-	logger              *slog.Logger
-	principalPrefix     string
-	actionPrefix        string
-	resourcePrefix      string
-	principalResolver   func(ctx context.Context, token string) string
+	timeout              time.Duration
+	maxResponseBodySize  int64
+	logger               *slog.Logger
+	requestIDHeaderKey   string
+	principalPrefix      string
+	actionPrefix         string
+	resourcePrefix       string
+	principalResolver    func(ctx context.Context, token string) string
 }
 
 // CedarAgentOption configures the Cedar agent REST endpoint.
@@ -96,6 +99,14 @@ func WithCedarAgentResourcePrefix(prefix string) CedarAgentOption {
 	}
 }
 
+// WithCedarAgentRequestIDHeaderKey sets the HTTP header key for forwarding the request ID
+// to the Cedar agent. Default is "x-request-id". Set to empty string to disable forwarding.
+func WithCedarAgentRequestIDHeaderKey(key string) CedarAgentOption {
+	return func(c *cedarAgentBuildConfig) {
+		c.requestIDHeaderKey = key
+	}
+}
+
 // WithCedarAgentPrincipalResolver sets a custom function to resolve the principal ID from the
 // raw bearer token. The default resolver returns the token value as-is.
 func WithCedarAgentPrincipalResolver(fn func(ctx context.Context, token string) string) CedarAgentOption {
@@ -109,14 +120,15 @@ func WithCedarAgentPrincipalResolver(fn func(ctx context.Context, token string) 
 
 // restCedarAgentEndpoint is a VerifierEndpoint implementation that calls a Cedar agent REST API.
 type restCedarAgentEndpoint struct {
-	httpClient          *http.Client
-	authorizeURL        string
-	maxResponseBodySize int64
-	logger              *slog.Logger
-	principalPrefix     string
-	actionPrefix        string
-	resourcePrefix      string
-	principalResolver   func(ctx context.Context, token string) string
+	httpClient           *http.Client
+	authorizeURL         string
+	maxResponseBodySize  int64
+	logger               *slog.Logger
+	requestIDHeaderKey   string
+	principalPrefix      string
+	actionPrefix         string
+	resourcePrefix       string
+	principalResolver    func(ctx context.Context, token string) string
 }
 
 // cedarAgentRequest is the JSON body sent to the Cedar agent's is_authorized API.
@@ -161,6 +173,7 @@ func NewCedarAgentEndpoint(baseURL string, opts ...CedarAgentOption) (VerifierEn
 		timeout:             defaultTimeout,
 		maxResponseBodySize: defaultMaxResponseBodySize,
 		logger:              newLogger(slog.LevelError),
+		requestIDHeaderKey:  "x-request-id",
 		principalPrefix:     "User",
 		actionPrefix:        "Action",
 		resourcePrefix:      "Resource",
@@ -175,6 +188,7 @@ func NewCedarAgentEndpoint(baseURL string, opts ...CedarAgentOption) (VerifierEn
 		authorizeURL:        base.String(),
 		maxResponseBodySize: cfg.maxResponseBodySize,
 		logger:              cfg.logger,
+		requestIDHeaderKey:  cfg.requestIDHeaderKey,
 		principalPrefix:     cfg.principalPrefix,
 		actionPrefix:        cfg.actionPrefix,
 		resourcePrefix:      cfg.resourcePrefix,
@@ -213,13 +227,13 @@ func (e *restCedarAgentEndpoint) Verify(ctx context.Context, resource, action st
 		return status.Errorf(codes.Internal, "failed to create Cedar agent request: %v", err)
 	}
 
-	requestID := getRequestID(ctx)
+	requestID := rt.RequestIDFromContext(ctx)
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
-	if requestID != "" {
-		req.Header.Set("x-request-id", requestID)
+	if e.requestIDHeaderKey != "" && requestID != "" {
+		req.Header.Set(e.requestIDHeaderKey, requestID)
 	}
 
 	// Send the request.

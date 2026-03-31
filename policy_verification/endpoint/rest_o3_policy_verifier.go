@@ -26,6 +26,8 @@ import (
 	"strings"
 	"time"
 
+	rt "github.com/o3co/grpc.authz/request_tracking"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -38,9 +40,10 @@ const defaultTimeout = 10 * time.Second
 // timeout など構築後に不要なフィールドをここで管理することで、
 // restO3PolicyVerifierEndpoint の struct を実行時に必要なフィールドのみに絞る。
 type buildConfig struct {
-	timeout             time.Duration
-	maxResponseBodySize int64
-	logger              *slog.Logger
+	timeout              time.Duration
+	maxResponseBodySize  int64
+	logger               *slog.Logger
+	requestIDHeaderKey   string
 }
 
 // Option はo3 REST エンドポイントの設定オプション
@@ -73,12 +76,22 @@ func WithLogLevel(level slog.Level) Option {
 	}
 }
 
+// WithRequestIDHeaderKey sets the HTTP header key for forwarding the request ID
+// to the authorization server. Default is "x-request-id". Set to empty string to
+// disable forwarding.
+func WithRequestIDHeaderKey(key string) Option {
+	return func(c *buildConfig) {
+		c.requestIDHeaderKey = key
+	}
+}
+
 // restO3PolicyVerifierEndpoint は o3 独自規格の REST 認可サービスへの VerifierEndpoint 実装
 type restO3PolicyVerifierEndpoint struct {
-	httpClient          *http.Client
-	verifyURL           string
-	maxResponseBodySize int64
-	logger              *slog.Logger
+	httpClient           *http.Client
+	verifyURL            string
+	maxResponseBodySize  int64
+	logger               *slog.Logger
+	requestIDHeaderKey   string
 }
 
 // NewRESTEndpoint o3 REST 認可エンドポイントのコンストラクタ。
@@ -104,6 +117,7 @@ func NewRESTEndpoint(baseURL string, opts ...Option) (VerifierEndpoint, error) {
 		timeout:             defaultTimeout,
 		maxResponseBodySize: defaultMaxResponseBodySize,
 		logger:              newLogger(slog.LevelError),
+		requestIDHeaderKey:  "x-request-id",
 	}
 	for _, opt := range opts {
 		opt(cfg)
@@ -114,6 +128,7 @@ func NewRESTEndpoint(baseURL string, opts ...Option) (VerifierEndpoint, error) {
 		verifyURL:           base.String(),
 		maxResponseBodySize: cfg.maxResponseBodySize,
 		logger:              cfg.logger,
+		requestIDHeaderKey:  cfg.requestIDHeaderKey,
 	}, nil
 }
 
@@ -142,23 +157,6 @@ func getToken(ctx context.Context) (*token, error) {
 	return &token{TokenType: parts[0], Value: parts[1]}, nil
 }
 
-// getRequestID context または gRPC incoming metadata から x-request-id を取得する。
-// context に値がある場合はそちらを優先し、なければ metadata を参照する。
-// どちらにも存在しない場合は空文字を返す。
-func getRequestID(ctx context.Context) string {
-	if v := RequestIDFromContext(ctx); v != "" {
-		return v
-	}
-	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return ""
-	}
-	if values := md["x-request-id"]; len(values) > 0 {
-		return values[0]
-	}
-	return ""
-}
-
 // Verify 権限チェックを実行する。
 func (e *restO3PolicyVerifierEndpoint) Verify(ctx context.Context, resource, action string) error {
 	// --- 認可トークン取得 -------------------------------------------------
@@ -181,15 +179,14 @@ func (e *restO3PolicyVerifierEndpoint) Verify(ctx context.Context, resource, act
 		return status.Errorf(codes.Internal, "failed to create request: %v", err)
 	}
 
-	requestID := getRequestID(ctx)
+	requestID := rt.RequestIDFromContext(ctx)
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", tok.TokenType+" "+tok.Value)
 
-	// x-request-id が存在する場合のみ転送する
-	if requestID != "" {
-		req.Header.Set("x-request-id", requestID)
+	if e.requestIDHeaderKey != "" && requestID != "" {
+		req.Header.Set(e.requestIDHeaderKey, requestID)
 	}
 
 	// --- リクエスト送信 ---------------------------------------------------

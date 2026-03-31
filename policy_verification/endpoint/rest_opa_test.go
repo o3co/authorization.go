@@ -25,6 +25,8 @@ import (
 	"testing"
 	"time"
 
+	rt "github.com/o3co/grpc.authz/request_tracking"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 )
@@ -290,7 +292,7 @@ func TestOPAVerify_RequestID_ForwardedWhenPresent(t *testing.T) {
 	ep := newTestOPAEndpoint(t, server.URL)
 	md := metadata.Pairs("authorization", "Bearer token-xyz")
 	ctx := metadata.NewIncomingContext(context.Background(), md)
-	ctx = WithRequestID(ctx, "req-abc-123")
+	ctx = rt.WithRequestID(ctx, "req-abc-123")
 
 	if err := ep.Verify(ctx, "posts", "read"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -298,5 +300,66 @@ func TestOPAVerify_RequestID_ForwardedWhenPresent(t *testing.T) {
 
 	if capturedRequestID != "req-abc-123" {
 		t.Errorf("x-request-id = %q, want %q", capturedRequestID, "req-abc-123")
+	}
+}
+
+// TestOPAVerify_WithRequestIDHeaderKey verifies that a custom header key is used
+// when WithOPARequestIDHeaderKey is set.
+func TestOPAVerify_WithRequestIDHeaderKey(t *testing.T) {
+	var capturedHeader string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedHeader = r.Header.Get("X-Correlation-Id")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		result := true
+		resp := opaResponse{Result: &result}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	ep, err := NewOPAEndpoint(server.URL, "authz/allow", WithOPARequestIDHeaderKey("X-Correlation-Id"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	md := metadata.Pairs("authorization", "Bearer token")
+	ctx := metadata.NewIncomingContext(context.Background(), md)
+	ctx = rt.WithRequestID(ctx, "opa-custom-789")
+
+	if err := ep.Verify(ctx, "posts", "read"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if capturedHeader != "opa-custom-789" {
+		t.Errorf("X-Correlation-Id = %q, want %q", capturedHeader, "opa-custom-789")
+	}
+}
+
+// TestOPAVerify_WithRequestIDHeaderKey_Empty_DisablesForwarding verifies that
+// an empty header key disables request ID forwarding to OPA.
+func TestOPAVerify_WithRequestIDHeaderKey_Empty_DisablesForwarding(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if v := r.Header.Get("x-request-id"); v != "" {
+			t.Errorf("x-request-id should not be set, got %q", v)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		result := true
+		resp := opaResponse{Result: &result}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	ep, err := NewOPAEndpoint(server.URL, "authz/allow", WithOPARequestIDHeaderKey(""))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	ctx := ctxWithBearerToken("token")
+	ctx = rt.WithRequestID(ctx, "should-not-forward")
+
+	if err := ep.Verify(ctx, "posts", "read"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

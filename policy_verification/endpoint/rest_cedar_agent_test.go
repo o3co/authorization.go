@@ -25,7 +25,10 @@ import (
 	"testing"
 	"time"
 
+	rt "github.com/o3co/grpc.authz/request_tracking"
+
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 )
 
 // --- NewCedarAgentEndpoint constructor tests ---
@@ -323,5 +326,56 @@ func TestCedarVerify_CustomPrincipalResolver_UsesResolvedID(t *testing.T) {
 	wantPrincipal := `User::"resolved-raw-token"`
 	if captured.Principal != wantPrincipal {
 		t.Errorf("principal = %q, want %q", captured.Principal, wantPrincipal)
+	}
+}
+
+// TestCedarVerify_WithRequestIDHeaderKey verifies that a custom header key is used
+// when WithCedarAgentRequestIDHeaderKey is set.
+func TestCedarVerify_WithRequestIDHeaderKey(t *testing.T) {
+	var capturedHeader string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedHeader = r.Header.Get("X-Trace-Id")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"decision":"Allow"}`))
+	}))
+	defer server.Close()
+
+	ep := newTestCedarAgentEndpoint(t, server.URL, WithCedarAgentRequestIDHeaderKey("X-Trace-Id"))
+
+	md := metadata.Pairs("authorization", "Bearer token")
+	ctx := metadata.NewIncomingContext(context.Background(), md)
+	ctx = rt.WithRequestID(ctx, "cedar-custom-456")
+
+	if err := ep.Verify(ctx, "posts", "read"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if capturedHeader != "cedar-custom-456" {
+		t.Errorf("X-Trace-Id = %q, want %q", capturedHeader, "cedar-custom-456")
+	}
+}
+
+// TestCedarVerify_WithRequestIDHeaderKey_Empty_DisablesForwarding verifies that
+// an empty header key disables request ID forwarding to Cedar agent.
+func TestCedarVerify_WithRequestIDHeaderKey_Empty_DisablesForwarding(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if v := r.Header.Get("x-request-id"); v != "" {
+			t.Errorf("x-request-id should not be set, got %q", v)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"decision":"Allow"}`))
+	}))
+	defer server.Close()
+
+	ep := newTestCedarAgentEndpoint(t, server.URL, WithCedarAgentRequestIDHeaderKey(""))
+
+	ctx := ctxWithBearerToken("token")
+	ctx = rt.WithRequestID(ctx, "should-not-forward")
+
+	if err := ep.Verify(ctx, "posts", "read"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

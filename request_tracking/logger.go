@@ -12,11 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package endpoint
+package requesttracking
 
-import "context"
+import (
+	"log/slog"
+	"os"
+)
 
-// VerifierEndpoint is the interface for policy verification endpoints.
-type VerifierEndpoint interface {
-	Verify(ctx context.Context, resource, action string) error
+func newLogger(level slog.Level) *slog.Logger {
+	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 }

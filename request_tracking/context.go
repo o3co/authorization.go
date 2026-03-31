@@ -12,11 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package endpoint
+package requesttracking
 
 import "context"
 
-// VerifierEndpoint is the interface for policy verification endpoints.
-type VerifierEndpoint interface {
-	Verify(ctx context.Context, resource, action string) error
+type contextKey struct{}
+
+// WithRequestID stores the request ID in the context.
+func WithRequestID(ctx context.Context, requestID string) context.Context {
+	return context.WithValue(ctx, contextKey{}, requestID)
+}
+
+// RequestIDFromContext retrieves the request ID from the context.
+// Returns empty string if not set.
+func RequestIDFromContext(ctx context.Context) string {
+	v, _ := ctx.Value(contextKey{}).(string)
+	return v
 }

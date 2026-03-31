@@ -24,7 +24,7 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	policyoption "github.com/o3co/grpc.authz/protobuf_policy_option"
-	"github.com/o3co/grpc.authz/policy_verification/endpoint"
+	rt "github.com/o3co/grpc.authz/request_tracking"
 	"github.com/o3co/grpc.authz/policy_verification/endpointtest"
 )
 
@@ -172,7 +172,7 @@ func TestStreamInterceptor_NoPolicy_PropagatesRequestID(t *testing.T) {
 
 	var capturedRequestID string
 	handler := func(srv interface{}, stream grpc.ServerStream) error {
-		capturedRequestID = endpoint.RequestIDFromContext(stream.Context())
+		capturedRequestID = rt.RequestIDFromContext(stream.Context())
 		return nil
 	}
 
@@ -194,12 +194,12 @@ func TestStreamInterceptor_NoPolicy_PropagatesRequestID(t *testing.T) {
 func TestAuthServerStream_RecvMsg_UsesStreamContext(t *testing.T) {
 	var capturedRequestID string
 	ep := endpointtest.Func(func(ctx context.Context, _, _ string) error {
-		capturedRequestID = endpoint.RequestIDFromContext(ctx)
+		capturedRequestID = rt.RequestIDFromContext(ctx)
 		return nil
 	})
 
 	// Simulate the enriched ctx produced by StreamInterceptor at stream establishment.
-	enrichedCtx := endpoint.WithRequestID(context.Background(), "stream-req-id")
+	enrichedCtx := rt.WithRequestID(context.Background(), "stream-req-id")
 	underlying := &mockServerStream{ctx: context.Background()}
 	wrapped := &authServerStream{
 		ServerStream: underlying,
