@@ -200,7 +200,9 @@ func (i *rfc7662Introspector) Introspect(ctx context.Context, credential string)
 		result.Subject = sub
 	}
 
-	// Scopes
+	// Scopes: supports both RFC 7662 "scope" (space-separated string) and
+	// "scopes" (JSON array, used by auth.provider). If both are present,
+	// "scopes" takes precedence.
 	if scopesRaw, ok := raw["scopes"]; ok {
 		if arr, ok := scopesRaw.([]any); ok {
 			for _, s := range arr {
@@ -209,6 +211,8 @@ func (i *rfc7662Introspector) Introspect(ctx context.Context, credential string)
 				}
 			}
 		}
+	} else if scopeStr, ok := raw["scope"].(string); ok && scopeStr != "" {
+		result.Scopes = strings.Fields(scopeStr)
 	}
 
 	// ExpiresAt
@@ -217,7 +221,7 @@ func (i *rfc7662Introspector) Introspect(ctx context.Context, credential string)
 	}
 
 	// Remaining claims (exclude promoted fields)
-	promoted := map[string]bool{"active": true, "sub": true, "scopes": true, "exp": true}
+	promoted := map[string]bool{"active": true, "sub": true, "scope": true, "scopes": true, "exp": true}
 	for k, v := range raw {
 		if !promoted[k] {
 			result.Claims[k] = v

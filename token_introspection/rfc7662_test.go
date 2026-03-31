@@ -260,6 +260,56 @@ func TestRFC7662_AuthorizationHeader(t *testing.T) {
 	}
 }
 
+// Verify RFC 7662 "scope" (space-separated string) is parsed into Scopes.
+func TestRFC7662_ScopeString(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"active": true,
+			"sub":    "user-1",
+			"scope":  "read write admin",
+		})
+	}))
+	defer server.Close()
+
+	ep, _ := NewRFC7662Introspector(server.URL)
+	result, err := ep.Introspect(context.Background(), "token")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.Scopes) != 3 || result.Scopes[0] != "read" || result.Scopes[1] != "write" || result.Scopes[2] != "admin" {
+		t.Errorf("Scopes = %v, want [read write admin]", result.Scopes)
+	}
+	if _, ok := result.Claims["scope"]; ok {
+		t.Error("Claims should not contain 'scope' (promoted to Scopes)")
+	}
+}
+
+// Verify "scopes" (array) takes precedence over "scope" (string) when both are present.
+func TestRFC7662_ScopesArrayPrecedence(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"active": true,
+			"sub":    "user-1",
+			"scope":  "read",
+			"scopes": []string{"write", "admin"},
+		})
+	}))
+	defer server.Close()
+
+	ep, _ := NewRFC7662Introspector(server.URL)
+	result, err := ep.Introspect(context.Background(), "token")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.Scopes) != 2 || result.Scopes[0] != "write" || result.Scopes[1] != "admin" {
+		t.Errorf("Scopes = %v, want [write admin] (scopes array should take precedence)", result.Scopes)
+	}
+}
+
 // Verify empty URL returns error.
 func TestNewRFC7662Introspector_EmptyURL_ReturnsError(t *testing.T) {
 	_, err := NewRFC7662Introspector("")
