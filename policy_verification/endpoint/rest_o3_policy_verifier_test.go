@@ -23,6 +23,8 @@ import (
 	"testing"
 	"time"
 
+	rt "github.com/o3co/grpc.authz/request_tracking"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -304,7 +306,7 @@ func TestVerify_RequestHeaders_SetCorrectly(t *testing.T) {
 	ep := newTestEndpoint(t, server.URL)
 	md := metadata.Pairs("authorization", "Bearer my-token")
 	ctx := metadata.NewIncomingContext(context.Background(), md)
-	ctx = WithRequestID(ctx, "req-id-456")
+	ctx = rt.WithRequestID(ctx, "req-id-456")
 
 	if err := ep.Verify(ctx, "posts", "read"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -458,7 +460,7 @@ func TestVerify_WithRequestIDHeaderKey(t *testing.T) {
 
 	md := metadata.Pairs("authorization", "Bearer my-token")
 	ctx := metadata.NewIncomingContext(context.Background(), md)
-	ctx = WithRequestID(ctx, "req-custom-789")
+	ctx = rt.WithRequestID(ctx, "req-custom-789")
 
 	if err := ep.Verify(ctx, "posts", "read"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -485,7 +487,7 @@ func TestVerify_WithRequestIDHeaderKey_Empty_DisablesForwarding(t *testing.T) {
 	}
 
 	ctx := ctxWithBearerToken("token")
-	ctx = WithRequestID(ctx, "should-not-forward")
+	ctx = rt.WithRequestID(ctx, "should-not-forward")
 
 	if err := ep.Verify(ctx, "posts", "read"); err != nil {
 		t.Fatalf("unexpected error: %v", err)

@@ -25,6 +25,8 @@ import (
 	"testing"
 	"time"
 
+	rt "github.com/o3co/grpc.authz/request_tracking"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 )
@@ -344,7 +346,7 @@ func TestCedarVerify_WithRequestIDHeaderKey(t *testing.T) {
 
 	md := metadata.Pairs("authorization", "Bearer token")
 	ctx := metadata.NewIncomingContext(context.Background(), md)
-	ctx = WithRequestID(ctx, "cedar-custom-456")
+	ctx = rt.WithRequestID(ctx, "cedar-custom-456")
 
 	if err := ep.Verify(ctx, "posts", "read"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -371,7 +373,7 @@ func TestCedarVerify_WithRequestIDHeaderKey_Empty_DisablesForwarding(t *testing.
 	ep := newTestCedarAgentEndpoint(t, server.URL, WithCedarAgentRequestIDHeaderKey(""))
 
 	ctx := ctxWithBearerToken("token")
-	ctx = WithRequestID(ctx, "should-not-forward")
+	ctx = rt.WithRequestID(ctx, "should-not-forward")
 
 	if err := ep.Verify(ctx, "posts", "read"); err != nil {
 		t.Fatalf("unexpected error: %v", err)

@@ -25,6 +25,8 @@ import (
 	"testing"
 	"time"
 
+	rt "github.com/o3co/grpc.authz/request_tracking"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 )
@@ -290,7 +292,7 @@ func TestOPAVerify_RequestID_ForwardedWhenPresent(t *testing.T) {
 	ep := newTestOPAEndpoint(t, server.URL)
 	md := metadata.Pairs("authorization", "Bearer token-xyz")
 	ctx := metadata.NewIncomingContext(context.Background(), md)
-	ctx = WithRequestID(ctx, "req-abc-123")
+	ctx = rt.WithRequestID(ctx, "req-abc-123")
 
 	if err := ep.Verify(ctx, "posts", "read"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -323,7 +325,7 @@ func TestOPAVerify_WithRequestIDHeaderKey(t *testing.T) {
 
 	md := metadata.Pairs("authorization", "Bearer token")
 	ctx := metadata.NewIncomingContext(context.Background(), md)
-	ctx = WithRequestID(ctx, "opa-custom-789")
+	ctx = rt.WithRequestID(ctx, "opa-custom-789")
 
 	if err := ep.Verify(ctx, "posts", "read"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -355,7 +357,7 @@ func TestOPAVerify_WithRequestIDHeaderKey_Empty_DisablesForwarding(t *testing.T)
 	}
 
 	ctx := ctxWithBearerToken("token")
-	ctx = WithRequestID(ctx, "should-not-forward")
+	ctx = rt.WithRequestID(ctx, "should-not-forward")
 
 	if err := ep.Verify(ctx, "posts", "read"); err != nil {
 		t.Fatalf("unexpected error: %v", err)

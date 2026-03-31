@@ -14,27 +14,9 @@
 
 package endpoint
 
-import (
-	"context"
-
-	rt "github.com/o3co/grpc.authz/request_tracking"
-)
+import "context"
 
 // VerifierEndpoint is the interface for policy verification endpoints.
 type VerifierEndpoint interface {
 	Verify(ctx context.Context, resource, action string) error
-}
-
-// WithRequestID stores the request ID in the context.
-//
-// Deprecated: Use requesttracking.WithRequestID directly.
-func WithRequestID(ctx context.Context, requestID string) context.Context {
-	return rt.WithRequestID(ctx, requestID)
-}
-
-// RequestIDFromContext retrieves the request ID from the context.
-//
-// Deprecated: Use requesttracking.RequestIDFromContext directly.
-func RequestIDFromContext(ctx context.Context) string {
-	return rt.RequestIDFromContext(ctx)
 }
