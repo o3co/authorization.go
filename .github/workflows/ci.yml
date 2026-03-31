@@ -48,6 +48,25 @@ jobs:
         working-directory: request_tracking
         run: go test ./... -count=1
 
+  token-introspection:
+    name: token_introspection
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: token_introspection/go.mod
+          cache-dependency-path: token_introspection/go.sum
+
+      - name: vet
+        working-directory: token_introspection
+        run: go vet ./...
+
+      - name: test
+        working-directory: token_introspection
+        run: go test ./... -count=1
+
   policy-verification:
     name: policy_verification
     runs-on: ubuntu-latest
