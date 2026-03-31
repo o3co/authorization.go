@@ -16,6 +16,7 @@ package tokenintrospection
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 )
@@ -193,11 +194,11 @@ func TestInMemoryCache_MaxEntriesZeroUnlimited(t *testing.T) {
 	cache := NewInMemoryCache(ctx, 1*time.Minute)
 
 	for i := 0; i < 100; i++ {
-		cache.Set("key"+string(rune('a'+i)), &IntrospectionResult{Subject: "user"})
+		cache.Set(fmt.Sprintf("key%d", i), &IntrospectionResult{Subject: "user"})
 	}
 
 	// All entries should exist
-	got, ok := cache.Get("keya")
+	got, ok := cache.Get("key0")
 	if !ok || got.Subject != "user" {
 		t.Error("expected all entries to exist with unlimited cache")
 	}
