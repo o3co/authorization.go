@@ -48,6 +48,25 @@ if id := rt.RequestIDFromContext(ctx); id != "" {
 }
 ```
 
+### Structured logging
+
+Wrap any `slog.Handler` with `NewRequestIDHandler` to automatically include the request ID in every log record:
+
+```go
+handler := rt.NewRequestIDHandler(slog.NewTextHandler(os.Stderr, nil))
+slog.SetDefault(slog.New(handler))
+
+// then anywhere:
+slog.InfoContext(ctx, "handling request")
+// → time=... level=INFO msg="handling request" x-request-id=abc123
+```
+
+Use `WithAttributeKey` to change the log attribute key:
+
+```go
+handler := rt.NewRequestIDHandler(base, rt.WithAttributeKey("trace-id"))
+```
+
 ### With policy_verification
 
 When used together with the authorization pipeline, add it as the first interceptor:

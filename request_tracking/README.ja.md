@@ -48,6 +48,25 @@ if id := rt.RequestIDFromContext(ctx); id != "" {
 }
 ```
 
+### 構造化ログ
+
+`slog.Handler` を `NewRequestIDHandler` でラップすると、全ログレコードにリクエスト ID が自動付与される:
+
+```go
+handler := rt.NewRequestIDHandler(slog.NewTextHandler(os.Stderr, nil))
+slog.SetDefault(slog.New(handler))
+
+// 以後どこでも:
+slog.InfoContext(ctx, "handling request")
+// → time=... level=INFO msg="handling request" x-request-id=abc123
+```
+
+`WithAttributeKey` でログの属性キーを変更可能:
+
+```go
+handler := rt.NewRequestIDHandler(base, rt.WithAttributeKey("trace-id"))
+```
+
 ### policy_verification との併用
 
 認可パイプラインと併用する場合は、最初のインターセプターとして追加する:
