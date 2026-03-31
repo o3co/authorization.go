@@ -40,10 +40,12 @@ func (s *server) GetPost(ctx context.Context, req *pb.GetPostRequest) (*pb.Post,
 
 ### HTTP 伝播
 
-下流の HTTP サービスを呼び出す際にリクエスト ID を伝播する:
+下流の HTTP サービスを呼び出す際に context から ID を取得してヘッダーを設定する:
 
 ```go
-rt.SetRequestIDHeader(ctx, httpReq) // context に ID があれば x-request-id ヘッダーを設定
+if id := rt.RequestIDFromContext(ctx); id != "" {
+    httpReq.Header.Set("x-request-id", id)
+}
 ```
 
 ### policy_verification との併用

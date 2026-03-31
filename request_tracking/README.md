@@ -38,12 +38,14 @@ func (s *server) GetPost(ctx context.Context, req *pb.GetPostRequest) (*pb.Post,
 }
 ```
 
-### HTTP propagation
+### Retrieve request ID for HTTP propagation
 
-When calling downstream HTTP services, propagate the request ID:
+When calling downstream HTTP services, retrieve the ID from context and set the header yourself:
 
 ```go
-rt.SetRequestIDHeader(ctx, httpReq) // sets x-request-id header if present in ctx
+if id := rt.RequestIDFromContext(ctx); id != "" {
+    httpReq.Header.Set("x-request-id", id)
+}
 ```
 
 ### With policy_verification

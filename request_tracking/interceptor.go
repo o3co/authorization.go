@@ -17,6 +17,7 @@ package requesttracking
 import (
 	"context"
 	"log/slog"
+	"strings"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -39,10 +40,11 @@ func WithLogLevel(level slog.Level) Option {
 }
 
 // WithMetadataKey sets the gRPC metadata key to extract the request ID from.
-// Default is "x-request-id".
+// Default is "x-request-id". The key is normalized to lowercase because gRPC
+// metadata keys are case-insensitive and stored in lowercase.
 func WithMetadataKey(key string) Option {
 	return func(c *config) {
-		c.metadataKey = key
+		c.metadataKey = strings.ToLower(key)
 	}
 }
 
