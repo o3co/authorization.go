@@ -57,6 +57,9 @@ func WithMetadataKey(key string) Option {
 // Introspector.Scheme(). Calling this multiple times for the same scheme
 // creates a strategy chain evaluated in registration order.
 func WithIntrospector(introspector Introspector) Option {
+	if introspector == nil {
+		panic("tokenintrospection: WithIntrospector called with nil introspector")
+	}
 	return func(c *config) {
 		scheme := strings.ToLower(introspector.Scheme())
 		c.schemes[scheme] = append(c.schemes[scheme], introspector)
@@ -93,10 +96,14 @@ func cacheKey(scheme, credential string) string {
 // Returns empty strings if the format is invalid.
 func parseAuthorization(value string) (scheme, credential string) {
 	parts := strings.SplitN(value, " ", 2)
-	if len(parts) != 2 || parts[1] == "" {
+	if len(parts) != 2 {
 		return "", ""
 	}
-	return strings.ToLower(parts[0]), parts[1]
+	credential = strings.TrimSpace(parts[1])
+	if credential == "" {
+		return "", ""
+	}
+	return strings.ToLower(parts[0]), credential
 }
 
 // introspect runs the scheme dispatch, cache check, and strategy chain evaluation.

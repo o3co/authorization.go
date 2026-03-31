@@ -106,7 +106,7 @@ func NewRFC7662Introspector(introspectURL string, opts ...RFC7662Option) (Intros
 	}
 
 	if !strings.HasPrefix(raw, "http://") && !strings.HasPrefix(raw, "https://") {
-		raw = "http://" + raw
+		raw = "https://" + raw
 	}
 
 	cfg := &rfc7662Config{
@@ -162,11 +162,13 @@ func (i *rfc7662Introspector) Introspect(ctx context.Context, credential string)
 	}
 	defer resp.Body.Close()
 
-	// Read response body
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, i.maxResponseBodySize))
+	// Read response body with truncation detection
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, i.maxResponseBodySize+1))
 	if err != nil {
-		i.logger.Error("failed to read response body", "error", err)
-		respBody = nil
+		return nil, status.Errorf(codes.Internal, "failed to read introspection response: %v", err)
+	}
+	if int64(len(respBody)) > i.maxResponseBodySize {
+		return nil, status.Error(codes.Internal, "introspection response body exceeds size limit")
 	}
 
 	// Handle non-2xx

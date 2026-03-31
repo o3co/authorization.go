@@ -91,7 +91,7 @@ grpc.NewServer(
 )
 ```
 
-Strategy chain evaluation: `codes.Unauthenticated` → try next; `codes.Internal` → abort; success → return.
+Strategy chain evaluation: `codes.Unauthenticated` → try next; any other error → abort; success → return.
 
 ### With the authorization pipeline
 

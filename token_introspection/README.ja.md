@@ -91,7 +91,7 @@ grpc.NewServer(
 )
 ```
 
-ストラテジーチェーンの評価: `codes.Unauthenticated` → 次を試みる; `codes.Internal` → 中断; 成功 → 返す。
+ストラテジーチェーンの評価: `codes.Unauthenticated` → 次を試みる; それ以外のエラー → 中断; 成功 → 返す。
 
 ### 認可パイプラインと組み合わせる
 
