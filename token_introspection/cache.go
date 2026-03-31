@@ -20,6 +20,8 @@ import (
 )
 
 // Cache is the interface for introspection result caching.
+// Implementations must be safe for concurrent use by multiple goroutines,
+// as interceptors are invoked concurrently across RPCs.
 type Cache interface {
 	Get(key string) (*IntrospectionResult, bool)
 	Set(key string, result *IntrospectionResult)
@@ -55,8 +57,14 @@ func (c *inMemoryCache) Get(key string) (*IntrospectionResult, bool) {
 }
 
 func (c *inMemoryCache) Set(key string, result *IntrospectionResult) {
+	expiry := time.Now().Add(c.ttl)
+	// If the token has an explicit expiration earlier than the cache TTL,
+	// use the token expiration to avoid caching beyond token validity.
+	if !result.ExpiresAt.IsZero() && result.ExpiresAt.Before(expiry) {
+		expiry = result.ExpiresAt
+	}
 	c.entries.Store(key, &cacheEntry{
 		result:    result,
-		expiresAt: time.Now().Add(c.ttl),
+		expiresAt: expiry,
 	})
 }

@@ -58,6 +58,22 @@ func TestInMemoryCache_Miss(t *testing.T) {
 	}
 }
 
+// Verify that ExpiresAt shorter than TTL bounds the cache entry lifetime.
+func TestInMemoryCache_ExpiresAtBoundsEntry(t *testing.T) {
+	cache := NewInMemoryCache(1 * time.Minute)
+	cache.Set("key1", &IntrospectionResult{
+		Subject:   "user-1",
+		ExpiresAt: time.Now().Add(1 * time.Millisecond),
+	})
+
+	time.Sleep(5 * time.Millisecond)
+
+	_, ok := cache.Get("key1")
+	if ok {
+		t.Error("expected cache miss after token ExpiresAt")
+	}
+}
+
 // Verify that keys with different scheme prefixes don't collide.
 func TestInMemoryCache_SharedAcrossSchemes(t *testing.T) {
 	cache := NewInMemoryCache(1 * time.Minute)
