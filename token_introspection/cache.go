@@ -15,6 +15,7 @@
 package tokenintrospection
 
 import (
+	"context"
 	"sync"
 	"time"
 )
@@ -32,15 +33,82 @@ type cacheEntry struct {
 	expiresAt time.Time
 }
 
+type inMemoryCacheConfig struct {
+	maxEntries    int
+	sweepInterval time.Duration
+}
+
+// InMemoryCacheOption configures the in-memory cache.
+type InMemoryCacheOption func(*inMemoryCacheConfig)
+
+// WithMaxEntries sets the maximum number of entries in the cache.
+// When exceeded on Set, the entry with the earliest expiration is evicted.
+// Default: 0 (unlimited).
+func WithMaxEntries(n int) InMemoryCacheOption {
+	if n < 0 {
+		n = 0
+	}
+	return func(c *inMemoryCacheConfig) {
+		c.maxEntries = n
+	}
+}
+
+// WithSweepInterval sets the interval for the background goroutine that
+// removes expired entries. Default: same as TTL.
+func WithSweepInterval(d time.Duration) InMemoryCacheOption {
+	return func(c *inMemoryCacheConfig) {
+		c.sweepInterval = d
+	}
+}
+
 type inMemoryCache struct {
-	ttl     time.Duration
-	entries sync.Map
+	ttl        time.Duration
+	maxEntries int
+	entries    sync.Map
 }
 
 // NewInMemoryCache creates an in-memory cache with the given TTL.
-// Expired entries are lazily evicted on access.
-func NewInMemoryCache(ttl time.Duration) Cache {
-	return &inMemoryCache{ttl: ttl}
+// A background goroutine periodically removes expired entries. It stops
+// when ctx is cancelled.
+func NewInMemoryCache(ctx context.Context, ttl time.Duration, opts ...InMemoryCacheOption) Cache {
+	cfg := &inMemoryCacheConfig{
+		sweepInterval: ttl,
+	}
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
+	c := &inMemoryCache{
+		ttl:        ttl,
+		maxEntries: cfg.maxEntries,
+	}
+
+	if cfg.sweepInterval > 0 {
+		go c.sweepLoop(ctx, cfg.sweepInterval)
+	}
+
+	return c
+}
+
+func (c *inMemoryCache) sweepLoop(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			now := time.Now()
+			c.entries.Range(func(key, value any) bool {
+				entry := value.(*cacheEntry)
+				if now.After(entry.expiresAt) {
+					c.entries.Delete(key)
+				}
+				return true
+			})
+		}
+	}
 }
 
 func (c *inMemoryCache) Get(key string) (*IntrospectionResult, bool) {
@@ -63,8 +131,41 @@ func (c *inMemoryCache) Set(key string, result *IntrospectionResult) {
 	if !result.ExpiresAt.IsZero() && result.ExpiresAt.Before(expiry) {
 		expiry = result.ExpiresAt
 	}
+
 	c.entries.Store(key, &cacheEntry{
 		result:    result,
 		expiresAt: expiry,
 	})
+
+	// Evict if over max entries
+	if c.maxEntries > 0 {
+		c.evictIfNeeded()
+	}
+}
+
+func (c *inMemoryCache) evictIfNeeded() {
+	var count int
+	c.entries.Range(func(_, _ any) bool {
+		count++
+		return true
+	})
+
+	for count > c.maxEntries {
+		var oldestKey any
+		var oldestExpiry time.Time
+
+		c.entries.Range(func(key, value any) bool {
+			entry := value.(*cacheEntry)
+			if oldestKey == nil || entry.expiresAt.Before(oldestExpiry) {
+				oldestKey = key
+				oldestExpiry = entry.expiresAt
+			}
+			return true
+		})
+
+		if oldestKey != nil {
+			c.entries.Delete(oldestKey)
+		}
+		count--
+	}
 }

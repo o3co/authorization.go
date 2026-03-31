@@ -246,7 +246,9 @@ func TestInterceptor_CacheHit(t *testing.T) {
 		return &IntrospectionResult{Subject: "cached-user"}, nil
 	})
 
-	cache := NewInMemoryCache(1 * time.Minute)
+	cacheCtx, cacheCancel := context.WithCancel(context.Background())
+	defer cacheCancel()
+	cache := NewInMemoryCache(cacheCtx, 1*time.Minute)
 	interceptor := Interceptor(WithIntrospector(introspector), WithCache(cache))
 
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) { return nil, nil }
@@ -274,7 +276,9 @@ func TestInterceptor_CacheMiss(t *testing.T) {
 		return &IntrospectionResult{Subject: "user"}, nil
 	})
 
-	cache := NewInMemoryCache(1 * time.Minute)
+	cacheCtx, cacheCancel := context.WithCancel(context.Background())
+	defer cacheCancel()
+	cache := NewInMemoryCache(cacheCtx, 1*time.Minute)
 	interceptor := Interceptor(WithIntrospector(introspector), WithCache(cache))
 
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) { return nil, nil }
@@ -296,7 +300,9 @@ func TestInterceptor_CacheErrorNotCached(t *testing.T) {
 		return nil, status.Error(codes.Unauthenticated, "invalid")
 	})
 
-	cache := NewInMemoryCache(1 * time.Minute)
+	cacheCtx, cacheCancel := context.WithCancel(context.Background())
+	defer cacheCancel()
+	cache := NewInMemoryCache(cacheCtx, 1*time.Minute)
 	interceptor := Interceptor(WithIntrospector(introspector), WithCache(cache))
 
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) { return nil, nil }

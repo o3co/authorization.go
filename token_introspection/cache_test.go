@@ -15,13 +15,17 @@
 package tokenintrospection
 
 import (
+	"context"
+	"fmt"
 	"testing"
 	"time"
 )
 
 // Verify basic Set and Get.
 func TestInMemoryCache_SetGet(t *testing.T) {
-	cache := NewInMemoryCache(1 * time.Minute)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cache := NewInMemoryCache(ctx, 1*time.Minute)
 	result := &IntrospectionResult{Subject: "user-1"}
 
 	cache.Set("key1", result)
@@ -37,7 +41,9 @@ func TestInMemoryCache_SetGet(t *testing.T) {
 
 // Verify that expired entries return a miss.
 func TestInMemoryCache_Expiry(t *testing.T) {
-	cache := NewInMemoryCache(1 * time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cache := NewInMemoryCache(ctx, 1*time.Millisecond)
 	cache.Set("key1", &IntrospectionResult{Subject: "user-1"})
 
 	time.Sleep(5 * time.Millisecond)
@@ -50,7 +56,9 @@ func TestInMemoryCache_Expiry(t *testing.T) {
 
 // Verify that Get returns miss for unknown keys.
 func TestInMemoryCache_Miss(t *testing.T) {
-	cache := NewInMemoryCache(1 * time.Minute)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cache := NewInMemoryCache(ctx, 1*time.Minute)
 
 	_, ok := cache.Get("nonexistent")
 	if ok {
@@ -60,7 +68,9 @@ func TestInMemoryCache_Miss(t *testing.T) {
 
 // Verify that ExpiresAt shorter than TTL bounds the cache entry lifetime.
 func TestInMemoryCache_ExpiresAtBoundsEntry(t *testing.T) {
-	cache := NewInMemoryCache(1 * time.Minute)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cache := NewInMemoryCache(ctx, 1*time.Minute)
 	cache.Set("key1", &IntrospectionResult{
 		Subject:   "user-1",
 		ExpiresAt: time.Now().Add(1 * time.Millisecond),
@@ -76,7 +86,9 @@ func TestInMemoryCache_ExpiresAtBoundsEntry(t *testing.T) {
 
 // Verify that keys with different scheme prefixes don't collide.
 func TestInMemoryCache_SharedAcrossSchemes(t *testing.T) {
-	cache := NewInMemoryCache(1 * time.Minute)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cache := NewInMemoryCache(ctx, 1*time.Minute)
 
 	cache.Set("bearer:token-abc", &IntrospectionResult{Subject: "bearer-user"})
 	cache.Set("basic:token-abc", &IntrospectionResult{Subject: "basic-user"})
@@ -89,5 +101,105 @@ func TestInMemoryCache_SharedAcrossSchemes(t *testing.T) {
 	got2, ok := cache.Get("basic:token-abc")
 	if !ok || got2.Subject != "basic-user" {
 		t.Errorf("basic entry = %v, want basic-user", got2)
+	}
+}
+
+// Verify that background sweep removes expired entries.
+func TestInMemoryCache_SweepRemovesExpired(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cache := NewInMemoryCache(ctx, 1*time.Millisecond,
+		WithSweepInterval(2*time.Millisecond),
+	)
+
+	cache.Set("key1", &IntrospectionResult{Subject: "user-1"})
+
+	// Wait for entry to expire and sweep to run
+	time.Sleep(10 * time.Millisecond)
+
+	_, ok := cache.Get("key1")
+	if ok {
+		t.Error("expected cache miss after sweep")
+	}
+}
+
+// Verify that sweep stops when context is cancelled.
+func TestInMemoryCache_SweepStopsOnCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	cache := NewInMemoryCache(ctx, 1*time.Minute,
+		WithSweepInterval(1*time.Millisecond),
+	)
+
+	cache.Set("key1", &IntrospectionResult{Subject: "user-1"})
+
+	// Cancel context — sweep should stop
+	cancel()
+	time.Sleep(5 * time.Millisecond)
+
+	// Entry should still be accessible (not expired, sweep stopped)
+	got, ok := cache.Get("key1")
+	if !ok {
+		t.Fatal("expected cache hit — entry is not expired")
+	}
+	if got.Subject != "user-1" {
+		t.Errorf("Subject = %q, want %q", got.Subject, "user-1")
+	}
+}
+
+// Verify that max entries evicts the entry with earliest expiration.
+func TestInMemoryCache_MaxEntries(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cache := NewInMemoryCache(ctx, 1*time.Minute,
+		WithMaxEntries(2),
+	)
+
+	// Entry 1 expires soonest (short TTL token)
+	cache.Set("key1", &IntrospectionResult{
+		Subject:   "user-1",
+		ExpiresAt: time.Now().Add(1 * time.Second),
+	})
+	// Entry 2 expires later
+	cache.Set("key2", &IntrospectionResult{
+		Subject:   "user-2",
+		ExpiresAt: time.Now().Add(1 * time.Minute),
+	})
+	// Entry 3 triggers eviction — key1 should be evicted (earliest expiry)
+	cache.Set("key3", &IntrospectionResult{
+		Subject:   "user-3",
+		ExpiresAt: time.Now().Add(1 * time.Minute),
+	})
+
+	_, ok1 := cache.Get("key1")
+	if ok1 {
+		t.Error("expected key1 to be evicted (earliest expiration)")
+	}
+
+	_, ok2 := cache.Get("key2")
+	if !ok2 {
+		t.Error("expected key2 to still exist")
+	}
+
+	_, ok3 := cache.Get("key3")
+	if !ok3 {
+		t.Error("expected key3 to still exist")
+	}
+}
+
+// Verify that maxEntries=0 means unlimited (default).
+func TestInMemoryCache_MaxEntriesZeroUnlimited(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cache := NewInMemoryCache(ctx, 1*time.Minute)
+
+	for i := 0; i < 100; i++ {
+		cache.Set(fmt.Sprintf("key%d", i), &IntrospectionResult{Subject: "user"})
+	}
+
+	// All entries should exist
+	got, ok := cache.Get("key0")
+	if !ok || got.Subject != "user" {
+		t.Error("expected all entries to exist with unlimited cache")
 	}
 }
