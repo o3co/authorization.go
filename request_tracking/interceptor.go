@@ -90,7 +90,7 @@ func Interceptor(opts ...Option) grpc.UnaryServerInterceptor {
 			ctx = WithRequestID(ctx, requestID)
 		}
 
-		log.Debug("request tracking", "method", info.FullMethod, "x-request-id", requestID)
+		log.Debug("request tracking", "method", info.FullMethod, "request_id", requestID)
 
 		return handler(ctx, req)
 	}
@@ -110,7 +110,7 @@ func StreamInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 			ctx = WithRequestID(ctx, requestID)
 		}
 
-		log.Debug("request tracking (stream)", "method", info.FullMethod, "x-request-id", requestID)
+		log.Debug("request tracking (stream)", "method", info.FullMethod, "request_id", requestID)
 
 		return handler(srv, &requestIDStream{ServerStream: ss, ctx: ctx})
 	}
