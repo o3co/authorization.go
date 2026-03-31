@@ -45,6 +45,9 @@ type InMemoryCacheOption func(*inMemoryCacheConfig)
 // When exceeded on Set, the entry with the earliest expiration is evicted.
 // Default: 0 (unlimited).
 func WithMaxEntries(n int) InMemoryCacheOption {
+	if n < 0 {
+		n = 0
+	}
 	return func(c *inMemoryCacheConfig) {
 		c.maxEntries = n
 	}
@@ -80,7 +83,9 @@ func NewInMemoryCache(ctx context.Context, ttl time.Duration, opts ...InMemoryCa
 		maxEntries: cfg.maxEntries,
 	}
 
-	go c.sweepLoop(ctx, cfg.sweepInterval)
+	if cfg.sweepInterval > 0 {
+		go c.sweepLoop(ctx, cfg.sweepInterval)
+	}
 
 	return c
 }

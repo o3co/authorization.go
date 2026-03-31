@@ -44,7 +44,7 @@ grpc.NewServer(
     grpc.ChainUnaryInterceptor(
         ti.Interceptor(
             ti.WithIntrospector(rfc7662),
-            ti.WithCache(ti.NewInMemoryCache(ctx, 30 * time.Second)),
+            ti.WithCache(ti.NewInMemoryCache(context.Background(), 30 * time.Second)),
         ),
     ),
 )
@@ -101,7 +101,7 @@ grpc.NewServer(
         rt.Interceptor(),                        // [1] request tracking (opt-in)
         ti.Interceptor(                          // [2] credential validation (opt-in)
             ti.WithIntrospector(rfc7662),
-            ti.WithCache(ti.NewInMemoryCache(ctx, 30 * time.Second)),
+            ti.WithCache(ti.NewInMemoryCache(context.Background(), 30 * time.Second)),
         ),
         policyoption.Interceptor(),              // [3] policy resolution
         policyverification.Interceptor(verifier), // [4] authorization check
