@@ -92,6 +92,10 @@ func WithMaxResponseBodySize(size int64) RFC7662Option {
 
 // WithClientCredentials sets Basic authentication for the introspection endpoint.
 // This is the recommended mode for production (RFC 7662 §2.1).
+//
+// Auth options (WithClientCredentials, WithBearerAuth, WithSelfIntrospect) are
+// mutually exclusive. If multiple are provided, the last one wins (standard
+// functional options behavior).
 func WithClientCredentials(clientID, clientSecret string) RFC7662Option {
 	if clientID == "" {
 		panic("clientID must not be empty")
