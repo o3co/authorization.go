@@ -238,16 +238,15 @@ func (e *restCedarAgentEndpoint) Verify(ctx context.Context, resource, action st
 		return status.Errorf(codes.Internal, "failed to create Cedar agent request: %v", err)
 	}
 
-	var requestID string
-	if e.requestIDFunc != nil {
-		requestID = e.requestIDFunc(ctx)
-	}
-
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
-	if e.requestIDHeaderKey != "" && requestID != "" {
-		req.Header.Set(e.requestIDHeaderKey, requestID)
+	var requestID string
+	if e.requestIDHeaderKey != "" && e.requestIDFunc != nil {
+		if id := e.requestIDFunc(ctx); id != "" {
+			requestID = id
+			req.Header.Set(e.requestIDHeaderKey, id)
+		}
 	}
 
 	// Send the request.

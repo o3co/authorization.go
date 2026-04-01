@@ -189,17 +189,16 @@ func (e *restO3PolicyVerifierEndpoint) Verify(ctx context.Context, resource, act
 		return status.Errorf(codes.Internal, "failed to create request: %v", err)
 	}
 
-	var requestID string
-	if e.requestIDFunc != nil {
-		requestID = e.requestIDFunc(ctx)
-	}
-
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", tok.TokenType+" "+tok.Value)
 
-	if e.requestIDHeaderKey != "" && requestID != "" {
-		req.Header.Set(e.requestIDHeaderKey, requestID)
+	var requestID string
+	if e.requestIDHeaderKey != "" && e.requestIDFunc != nil {
+		if id := e.requestIDFunc(ctx); id != "" {
+			requestID = id
+			req.Header.Set(e.requestIDHeaderKey, id)
+		}
 	}
 
 	// --- リクエスト送信 ---------------------------------------------------
