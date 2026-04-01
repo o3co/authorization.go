@@ -26,8 +26,6 @@ import (
 	"strings"
 	"time"
 
-	rt "github.com/o3co/grpc.authz/request_tracking"
-
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -44,6 +42,7 @@ type buildConfig struct {
 	maxResponseBodySize  int64
 	logger               *slog.Logger
 	requestIDHeaderKey   string
+	requestIDFunc        func(context.Context) string
 }
 
 // Option はo3 REST エンドポイントの設定オプション
@@ -78,10 +77,19 @@ func WithLogLevel(level slog.Level) Option {
 
 // WithRequestIDHeaderKey sets the HTTP header key for forwarding the request ID
 // to the authorization server. Default is "x-request-id". Set to empty string to
-// disable forwarding.
+// disable forwarding. Only used when WithRequestIDFunc is also set.
 func WithRequestIDHeaderKey(key string) Option {
 	return func(c *buildConfig) {
 		c.requestIDHeaderKey = key
+	}
+}
+
+// WithRequestIDFunc sets a function to extract the request ID from the context
+// for forwarding to the authorization server as a header.
+// If not set, no request ID is extracted and header forwarding is skipped.
+func WithRequestIDFunc(fn func(context.Context) string) Option {
+	return func(c *buildConfig) {
+		c.requestIDFunc = fn
 	}
 }
 
@@ -92,6 +100,7 @@ type restO3PolicyVerifierEndpoint struct {
 	maxResponseBodySize  int64
 	logger               *slog.Logger
 	requestIDHeaderKey   string
+	requestIDFunc        func(context.Context) string
 }
 
 // NewRESTEndpoint o3 REST 認可エンドポイントのコンストラクタ。
@@ -129,6 +138,7 @@ func NewRESTEndpoint(baseURL string, opts ...Option) (VerifierEndpoint, error) {
 		maxResponseBodySize: cfg.maxResponseBodySize,
 		logger:              cfg.logger,
 		requestIDHeaderKey:  cfg.requestIDHeaderKey,
+		requestIDFunc:       cfg.requestIDFunc,
 	}, nil
 }
 
@@ -179,7 +189,10 @@ func (e *restO3PolicyVerifierEndpoint) Verify(ctx context.Context, resource, act
 		return status.Errorf(codes.Internal, "failed to create request: %v", err)
 	}
 
-	requestID := rt.RequestIDFromContext(ctx)
+	var requestID string
+	if e.requestIDFunc != nil {
+		requestID = e.requestIDFunc(ctx)
+	}
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
