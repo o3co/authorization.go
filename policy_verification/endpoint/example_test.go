@@ -93,6 +93,27 @@ func ExampleNewStaticEndpoint() {
 	// Output: verifier created
 }
 
+func ExampleNewRESTEndpoint_withRequestIDFunc() {
+	// Use with request_tracking module:
+	//   endpoint.WithRequestIDFunc(rt.RequestIDFromContext)
+	//
+	// Or use a custom extraction function:
+	verifier, err := endpoint.NewRESTEndpoint(
+		"http://auth-service:8080",
+		endpoint.WithRequestIDFunc(func(ctx context.Context) string {
+			// Extract request ID from your preferred source.
+			return ""
+		}),
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("verifier created")
+	_ = verifier
+	// Output: verifier created
+}
+
 func ExampleNewCedarAgentEndpoint_customPrefixes() {
 	verifier, err := endpoint.NewCedarAgentEndpoint(
 		"http://cedar-agent:8180",
