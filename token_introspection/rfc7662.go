@@ -93,8 +93,14 @@ func WithMaxResponseBodySize(size int64) RFC7662Option {
 // WithClientCredentials sets Basic authentication for the introspection endpoint.
 // This is the recommended mode for production (RFC 7662 §2.1).
 func WithClientCredentials(clientID, clientSecret string) RFC7662Option {
+	if clientID == "" {
+		panic("clientID must not be empty")
+	}
+	if clientSecret == "" {
+		panic("clientSecret must not be empty")
+	}
+	encoded := base64.StdEncoding.EncodeToString([]byte(clientID + ":" + clientSecret))
 	return func(c *rfc7662Config) {
-		encoded := base64.StdEncoding.EncodeToString([]byte(clientID + ":" + clientSecret))
 		c.authFunc = func(_ string) (string, string) {
 			return "Authorization", "Basic " + encoded
 		}
@@ -103,6 +109,9 @@ func WithClientCredentials(clientID, clientSecret string) RFC7662Option {
 
 // WithBearerAuth sets a fixed service-level Bearer token for the introspection endpoint.
 func WithBearerAuth(token string) RFC7662Option {
+	if token == "" {
+		panic("token must not be empty")
+	}
 	return func(c *rfc7662Config) {
 		c.authFunc = func(_ string) (string, string) {
 			return "Authorization", "Bearer " + token

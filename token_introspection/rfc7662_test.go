@@ -454,6 +454,36 @@ func TestRFC7662_LegacyCompat(t *testing.T) {
 	}
 }
 
+// Verify WithClientCredentials panics on empty clientID.
+func TestWithClientCredentials_EmptyClientID_Panics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic for empty clientID")
+		}
+	}()
+	WithClientCredentials("", "secret")
+}
+
+// Verify WithClientCredentials panics on empty clientSecret.
+func TestWithClientCredentials_EmptyClientSecret_Panics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic for empty clientSecret")
+		}
+	}()
+	WithClientCredentials("client", "")
+}
+
+// Verify WithBearerAuth panics on empty token.
+func TestWithBearerAuth_EmptyToken_Panics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic for empty token")
+		}
+	}()
+	WithBearerAuth("")
+}
+
 // Verify empty URL returns error.
 func TestNewRFC7662Introspector_EmptyURL_ReturnsError(t *testing.T) {
 	_, err := NewRFC7662Introspector("")
