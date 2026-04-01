@@ -399,6 +399,61 @@ func TestRFC7662_ScopesArrayPrecedence(t *testing.T) {
 	}
 }
 
+// Verify WithJSONBody sends application/json with {"token":"..."}.
+func TestRFC7662_WithJSONBody(t *testing.T) {
+	var capturedContentType string
+	var capturedBody map[string]string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedContentType = r.Header.Get("Content-Type")
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &capturedBody)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{"active": true, "sub": "u"})
+	}))
+	defer server.Close()
+
+	ep, _ := NewRFC7662Introspector(server.URL, WithJSONBody())
+	_, _ = ep.Introspect(context.Background(), "my-jwt-token")
+
+	if capturedContentType != "application/json" {
+		t.Errorf("Content-Type = %q, want %q", capturedContentType, "application/json")
+	}
+	if capturedBody["token"] != "my-jwt-token" {
+		t.Errorf("body[token] = %q, want %q", capturedBody["token"], "my-jwt-token")
+	}
+}
+
+// Verify WithJSONBody + WithSelfIntrospect reproduces legacy behavior.
+func TestRFC7662_LegacyCompat(t *testing.T) {
+	var capturedContentType string
+	var capturedAuth string
+	var capturedBody map[string]string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedContentType = r.Header.Get("Content-Type")
+		capturedAuth = r.Header.Get("Authorization")
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &capturedBody)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{"active": true, "sub": "u"})
+	}))
+	defer server.Close()
+
+	ep, _ := NewRFC7662Introspector(server.URL, WithJSONBody(), WithSelfIntrospect())
+	_, _ = ep.Introspect(context.Background(), "my-jwt-token")
+
+	if capturedContentType != "application/json" {
+		t.Errorf("Content-Type = %q, want %q", capturedContentType, "application/json")
+	}
+	if capturedAuth != "Bearer my-jwt-token" {
+		t.Errorf("Authorization = %q, want %q", capturedAuth, "Bearer my-jwt-token")
+	}
+	if capturedBody["token"] != "my-jwt-token" {
+		t.Errorf("body[token] = %q, want %q", capturedBody["token"], "my-jwt-token")
+	}
+}
+
 // Verify empty URL returns error.
 func TestNewRFC7662Introspector_EmptyURL_ReturnsError(t *testing.T) {
 	_, err := NewRFC7662Introspector("")
