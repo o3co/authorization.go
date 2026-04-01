@@ -103,7 +103,7 @@ func WithClientCredentials(clientID, clientSecret string) RFC7662Option {
 	if clientSecret == "" {
 		panic("clientSecret must not be empty")
 	}
-	encoded := base64.StdEncoding.EncodeToString([]byte(clientID + ":" + clientSecret))
+	encoded := base64.StdEncoding.EncodeToString([]byte(url.QueryEscape(clientID) + ":" + url.QueryEscape(clientSecret)))
 	return func(c *rfc7662Config) {
 		c.authFunc = func(_ string) (string, string) {
 			return "Authorization", "Basic " + encoded

@@ -241,7 +241,9 @@ func TestRFC7662_DefaultFormURLEncoded(t *testing.T) {
 	defer server.Close()
 
 	ep, _ := NewRFC7662Introspector(server.URL)
-	_, _ = ep.Introspect(context.Background(), "my-jwt-token")
+	if _, err := ep.Introspect(context.Background(), "my-jwt-token"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if capturedContentType != "application/x-www-form-urlencoded" {
 		t.Errorf("Content-Type = %q, want %q", capturedContentType, "application/x-www-form-urlencoded")
@@ -264,7 +266,9 @@ func TestRFC7662_FormURLEncoded_SpecialChars(t *testing.T) {
 	defer server.Close()
 
 	ep, _ := NewRFC7662Introspector(server.URL)
-	_, _ = ep.Introspect(context.Background(), "token+with=special&chars")
+	if _, err := ep.Introspect(context.Background(), "token+with=special&chars"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	want := "token=token%2Bwith%3Dspecial%26chars"
 	if capturedBody != want {
@@ -284,14 +288,16 @@ func TestRFC7662_DefaultNoAuthHeader(t *testing.T) {
 	defer server.Close()
 
 	ep, _ := NewRFC7662Introspector(server.URL)
-	_, _ = ep.Introspect(context.Background(), "my-jwt-token")
+	if _, err := ep.Introspect(context.Background(), "my-jwt-token"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if capturedAuth != "" {
 		t.Errorf("Authorization = %q, want empty (no auth by default)", capturedAuth)
 	}
 }
 
-// Verify WithClientCredentials sends Basic auth.
+// Verify WithClientCredentials sends Basic auth with RFC 6749 §2.3.1 encoding.
 func TestRFC7662_WithClientCredentials(t *testing.T) {
 	var capturedAuth string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -303,9 +309,35 @@ func TestRFC7662_WithClientCredentials(t *testing.T) {
 	defer server.Close()
 
 	ep, _ := NewRFC7662Introspector(server.URL, WithClientCredentials("my-client", "my-secret"))
-	_, _ = ep.Introspect(context.Background(), "some-token")
+	if _, err := ep.Introspect(context.Background(), "some-token"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
+	// clientID and clientSecret are URL-encoded per RFC 6749 §2.3.1 before base64
 	want := "Basic " + base64Encode("my-client:my-secret")
+	if capturedAuth != want {
+		t.Errorf("Authorization = %q, want %q", capturedAuth, want)
+	}
+}
+
+// Verify WithClientCredentials URL-encodes special characters per RFC 6749 §2.3.1.
+func TestRFC7662_WithClientCredentials_SpecialChars(t *testing.T) {
+	var capturedAuth string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{"active": true, "sub": "u"})
+	}))
+	defer server.Close()
+
+	ep, _ := NewRFC7662Introspector(server.URL, WithClientCredentials("client:id", "secret with spaces"))
+	if _, err := ep.Introspect(context.Background(), "token"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// ':' → %3A, ' ' → '+' per url.QueryEscape
+	want := "Basic " + base64Encode("client%3Aid:secret+with+spaces")
 	if capturedAuth != want {
 		t.Errorf("Authorization = %q, want %q", capturedAuth, want)
 	}
@@ -323,7 +355,9 @@ func TestRFC7662_WithBearerAuth(t *testing.T) {
 	defer server.Close()
 
 	ep, _ := NewRFC7662Introspector(server.URL, WithBearerAuth("service-token-xyz"))
-	_, _ = ep.Introspect(context.Background(), "user-token")
+	if _, err := ep.Introspect(context.Background(), "user-token"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if capturedAuth != "Bearer service-token-xyz" {
 		t.Errorf("Authorization = %q, want %q", capturedAuth, "Bearer service-token-xyz")
@@ -342,7 +376,9 @@ func TestRFC7662_WithSelfIntrospect(t *testing.T) {
 	defer server.Close()
 
 	ep, _ := NewRFC7662Introspector(server.URL, WithSelfIntrospect())
-	_, _ = ep.Introspect(context.Background(), "my-jwt-token")
+	if _, err := ep.Introspect(context.Background(), "my-jwt-token"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if capturedAuth != "Bearer my-jwt-token" {
 		t.Errorf("Authorization = %q, want %q", capturedAuth, "Bearer my-jwt-token")
@@ -414,7 +450,9 @@ func TestRFC7662_WithJSONBody(t *testing.T) {
 	defer server.Close()
 
 	ep, _ := NewRFC7662Introspector(server.URL, WithJSONBody())
-	_, _ = ep.Introspect(context.Background(), "my-jwt-token")
+	if _, err := ep.Introspect(context.Background(), "my-jwt-token"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if capturedContentType != "application/json" {
 		t.Errorf("Content-Type = %q, want %q", capturedContentType, "application/json")
@@ -441,7 +479,9 @@ func TestRFC7662_LegacyCompat(t *testing.T) {
 	defer server.Close()
 
 	ep, _ := NewRFC7662Introspector(server.URL, WithJSONBody(), WithSelfIntrospect())
-	_, _ = ep.Introspect(context.Background(), "my-jwt-token")
+	if _, err := ep.Introspect(context.Background(), "my-jwt-token"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if capturedContentType != "application/json" {
 		t.Errorf("Content-Type = %q, want %q", capturedContentType, "application/json")
