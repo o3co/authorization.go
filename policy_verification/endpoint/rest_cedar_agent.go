@@ -26,8 +26,6 @@ import (
 	"strings"
 	"time"
 
-	rt "github.com/o3co/grpc.authz/request_tracking"
-
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -42,6 +40,7 @@ type cedarAgentBuildConfig struct {
 	actionPrefix         string
 	resourcePrefix       string
 	principalResolver    func(ctx context.Context, token string) string
+	requestIDFunc        func(context.Context) string
 }
 
 // CedarAgentOption configures the Cedar agent REST endpoint.
@@ -101,9 +100,19 @@ func WithCedarAgentResourcePrefix(prefix string) CedarAgentOption {
 
 // WithCedarAgentRequestIDHeaderKey sets the HTTP header key for forwarding the request ID
 // to the Cedar agent. Default is "x-request-id". Set to empty string to disable forwarding.
+// Only used when WithCedarAgentRequestIDFunc is also set.
 func WithCedarAgentRequestIDHeaderKey(key string) CedarAgentOption {
 	return func(c *cedarAgentBuildConfig) {
 		c.requestIDHeaderKey = key
+	}
+}
+
+// WithCedarAgentRequestIDFunc sets a function to extract the request ID from the context
+// for forwarding to the Cedar agent as a header.
+// If not set, no request ID is extracted and header forwarding is skipped.
+func WithCedarAgentRequestIDFunc(fn func(context.Context) string) CedarAgentOption {
+	return func(c *cedarAgentBuildConfig) {
+		c.requestIDFunc = fn
 	}
 }
 
@@ -129,6 +138,7 @@ type restCedarAgentEndpoint struct {
 	actionPrefix         string
 	resourcePrefix       string
 	principalResolver    func(ctx context.Context, token string) string
+	requestIDFunc        func(context.Context) string
 }
 
 // cedarAgentRequest is the JSON body sent to the Cedar agent's is_authorized API.
@@ -193,6 +203,7 @@ func NewCedarAgentEndpoint(baseURL string, opts ...CedarAgentOption) (VerifierEn
 		actionPrefix:        cfg.actionPrefix,
 		resourcePrefix:      cfg.resourcePrefix,
 		principalResolver:   cfg.principalResolver,
+		requestIDFunc:       cfg.requestIDFunc,
 	}, nil
 }
 
@@ -227,13 +238,15 @@ func (e *restCedarAgentEndpoint) Verify(ctx context.Context, resource, action st
 		return status.Errorf(codes.Internal, "failed to create Cedar agent request: %v", err)
 	}
 
-	requestID := rt.RequestIDFromContext(ctx)
-
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
-	if e.requestIDHeaderKey != "" && requestID != "" {
-		req.Header.Set(e.requestIDHeaderKey, requestID)
+	var requestID string
+	if e.requestIDHeaderKey != "" && e.requestIDFunc != nil {
+		if id := e.requestIDFunc(ctx); id != "" {
+			requestID = id
+			req.Header.Set(e.requestIDHeaderKey, id)
+		}
 	}
 
 	// Send the request.

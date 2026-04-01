@@ -25,10 +25,7 @@ import (
 	"testing"
 	"time"
 
-	rt "github.com/o3co/grpc.authz/request_tracking"
-
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 )
 
 // --- NewCedarAgentEndpoint constructor tests ---
@@ -342,13 +339,14 @@ func TestCedarVerify_WithRequestIDHeaderKey(t *testing.T) {
 	}))
 	defer server.Close()
 
-	ep := newTestCedarAgentEndpoint(t, server.URL, WithCedarAgentRequestIDHeaderKey("X-Trace-Id"))
+	ep := newTestCedarAgentEndpoint(t, server.URL,
+		WithCedarAgentRequestIDHeaderKey("X-Trace-Id"),
+		WithCedarAgentRequestIDFunc(func(ctx context.Context) string {
+			return "cedar-custom-456"
+		}),
+	)
 
-	md := metadata.Pairs("authorization", "Bearer token")
-	ctx := metadata.NewIncomingContext(context.Background(), md)
-	ctx = rt.WithRequestID(ctx, "cedar-custom-456")
-
-	if err := ep.Verify(ctx, "posts", "read"); err != nil {
+	if err := ep.Verify(ctxWithBearerToken("token"), "posts", "read"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -370,12 +368,42 @@ func TestCedarVerify_WithRequestIDHeaderKey_Empty_DisablesForwarding(t *testing.
 	}))
 	defer server.Close()
 
-	ep := newTestCedarAgentEndpoint(t, server.URL, WithCedarAgentRequestIDHeaderKey(""))
+	ep := newTestCedarAgentEndpoint(t, server.URL,
+		WithCedarAgentRequestIDHeaderKey(""),
+		WithCedarAgentRequestIDFunc(func(ctx context.Context) string {
+			return "should-not-forward"
+		}),
+	)
 
-	ctx := ctxWithBearerToken("token")
-	ctx = rt.WithRequestID(ctx, "should-not-forward")
-
-	if err := ep.Verify(ctx, "posts", "read"); err != nil {
+	if err := ep.Verify(ctxWithBearerToken("token"), "posts", "read"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// TestCedarVerify_WithRequestIDFunc verifies that a custom function is used to extract the request ID.
+func TestCedarVerify_WithRequestIDFunc(t *testing.T) {
+	var capturedRequestID string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedRequestID = r.Header.Get("x-request-id")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"decision":"Allow"}`))
+	}))
+	defer server.Close()
+
+	ep, err := NewCedarAgentEndpoint(server.URL, WithCedarAgentRequestIDFunc(func(ctx context.Context) string {
+		return "cedar-func-injected-id"
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if err := ep.Verify(ctxWithBearerToken("token"), "posts", "read"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if capturedRequestID != "cedar-func-injected-id" {
+		t.Errorf("x-request-id = %q, want %q", capturedRequestID, "cedar-func-injected-id")
 	}
 }

@@ -23,8 +23,6 @@ import (
 	"testing"
 	"time"
 
-	rt "github.com/o3co/grpc.authz/request_tracking"
-
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -303,10 +301,15 @@ func TestVerify_RequestHeaders_SetCorrectly(t *testing.T) {
 	}))
 	defer server.Close()
 
-	ep := newTestEndpoint(t, server.URL)
+	ep, err := NewRESTEndpoint(server.URL, WithRequestIDFunc(func(ctx context.Context) string {
+		return "req-id-456"
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
 	md := metadata.Pairs("authorization", "Bearer my-token")
 	ctx := metadata.NewIncomingContext(context.Background(), md)
-	ctx = rt.WithRequestID(ctx, "req-id-456")
 
 	if err := ep.Verify(ctx, "posts", "read"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -453,16 +456,17 @@ func TestVerify_WithRequestIDHeaderKey(t *testing.T) {
 	}))
 	defer server.Close()
 
-	ep, err := NewRESTEndpoint(server.URL, WithRequestIDHeaderKey("X-Correlation-Id"))
+	ep, err := NewRESTEndpoint(server.URL,
+		WithRequestIDHeaderKey("X-Correlation-Id"),
+		WithRequestIDFunc(func(ctx context.Context) string {
+			return "req-custom-789"
+		}),
+	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	md := metadata.Pairs("authorization", "Bearer my-token")
-	ctx := metadata.NewIncomingContext(context.Background(), md)
-	ctx = rt.WithRequestID(ctx, "req-custom-789")
-
-	if err := ep.Verify(ctx, "posts", "read"); err != nil {
+	if err := ep.Verify(ctxWithBearerToken("my-token"), "posts", "read"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -481,16 +485,44 @@ func TestVerify_WithRequestIDHeaderKey_Empty_DisablesForwarding(t *testing.T) {
 	}))
 	defer server.Close()
 
-	ep, err := NewRESTEndpoint(server.URL, WithRequestIDHeaderKey(""))
+	ep, err := NewRESTEndpoint(server.URL,
+		WithRequestIDHeaderKey(""),
+		WithRequestIDFunc(func(ctx context.Context) string {
+			return "should-not-forward"
+		}),
+	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	ctx := ctxWithBearerToken("token")
-	ctx = rt.WithRequestID(ctx, "should-not-forward")
-
-	if err := ep.Verify(ctx, "posts", "read"); err != nil {
+	if err := ep.Verify(ctxWithBearerToken("token"), "posts", "read"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// TestVerify_WithRequestIDFunc verifies that a custom function is used to extract the request ID.
+func TestVerify_WithRequestIDFunc(t *testing.T) {
+	var capturedRequestID string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedRequestID = r.Header.Get("x-request-id")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	ep, err := NewRESTEndpoint(server.URL, WithRequestIDFunc(func(ctx context.Context) string {
+		return "func-injected-id"
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if err := ep.Verify(ctxWithBearerToken("token"), "posts", "read"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if capturedRequestID != "func-injected-id" {
+		t.Errorf("x-request-id = %q, want %q", capturedRequestID, "func-injected-id")
 	}
 }
 
