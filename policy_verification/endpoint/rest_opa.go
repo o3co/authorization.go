@@ -26,8 +26,6 @@ import (
 	"strings"
 	"time"
 
-	rt "github.com/o3co/grpc.authz/request_tracking"
-
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -38,6 +36,7 @@ type opaBuildConfig struct {
 	maxResponseBodySize  int64
 	logger               *slog.Logger
 	requestIDHeaderKey   string
+	requestIDFunc        func(context.Context) string
 }
 
 // OPAOption configures the OPA REST endpoint.
@@ -73,9 +72,19 @@ func WithOPALogLevel(level slog.Level) OPAOption {
 
 // WithOPARequestIDHeaderKey sets the HTTP header key for forwarding the request ID
 // to OPA. Default is "x-request-id". Set to empty string to disable forwarding.
+// Only used when WithOPARequestIDFunc is also set.
 func WithOPARequestIDHeaderKey(key string) OPAOption {
 	return func(c *opaBuildConfig) {
 		c.requestIDHeaderKey = key
+	}
+}
+
+// WithOPARequestIDFunc sets a function to extract the request ID from the context
+// for forwarding to OPA as a header.
+// If not set, no request ID is extracted and header forwarding is skipped.
+func WithOPARequestIDFunc(fn func(context.Context) string) OPAOption {
+	return func(c *opaBuildConfig) {
+		c.requestIDFunc = fn
 	}
 }
 
@@ -86,6 +95,7 @@ type restOPAEndpoint struct {
 	maxResponseBodySize  int64
 	logger               *slog.Logger
 	requestIDHeaderKey   string
+	requestIDFunc        func(context.Context) string
 }
 
 // opaRequest is the JSON body sent to OPA's data API.
@@ -149,6 +159,7 @@ func NewOPAEndpoint(baseURL, policyPath string, opts ...OPAOption) (VerifierEndp
 		maxResponseBodySize: cfg.maxResponseBodySize,
 		logger:              cfg.logger,
 		requestIDHeaderKey:  cfg.requestIDHeaderKey,
+		requestIDFunc:       cfg.requestIDFunc,
 	}, nil
 }
 
@@ -181,7 +192,10 @@ func (e *restOPAEndpoint) Verify(ctx context.Context, resource, action string) e
 		return status.Errorf(codes.Internal, "failed to create OPA request: %v", err)
 	}
 
-	requestID := rt.RequestIDFromContext(ctx)
+	var requestID string
+	if e.requestIDFunc != nil {
+		requestID = e.requestIDFunc(ctx)
+	}
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")

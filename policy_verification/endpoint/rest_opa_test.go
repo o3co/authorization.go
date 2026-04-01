@@ -25,10 +25,7 @@ import (
 	"testing"
 	"time"
 
-	rt "github.com/o3co/grpc.authz/request_tracking"
-
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 )
 
 // --- NewOPAEndpoint constructor tests ---
@@ -289,12 +286,14 @@ func TestOPAVerify_RequestID_ForwardedWhenPresent(t *testing.T) {
 	}))
 	defer server.Close()
 
-	ep := newTestOPAEndpoint(t, server.URL)
-	md := metadata.Pairs("authorization", "Bearer token-xyz")
-	ctx := metadata.NewIncomingContext(context.Background(), md)
-	ctx = rt.WithRequestID(ctx, "req-abc-123")
+	ep, err := NewOPAEndpoint(server.URL, "authz/allow", WithOPARequestIDFunc(func(ctx context.Context) string {
+		return "req-abc-123"
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
-	if err := ep.Verify(ctx, "posts", "read"); err != nil {
+	if err := ep.Verify(ctxWithBearerToken("token-xyz"), "posts", "read"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -318,21 +317,52 @@ func TestOPAVerify_WithRequestIDHeaderKey(t *testing.T) {
 	}))
 	defer server.Close()
 
-	ep, err := NewOPAEndpoint(server.URL, "authz/allow", WithOPARequestIDHeaderKey("X-Correlation-Id"))
+	ep, err := NewOPAEndpoint(server.URL, "authz/allow",
+		WithOPARequestIDHeaderKey("X-Correlation-Id"),
+		WithOPARequestIDFunc(func(ctx context.Context) string {
+			return "opa-custom-789"
+		}),
+	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	md := metadata.Pairs("authorization", "Bearer token")
-	ctx := metadata.NewIncomingContext(context.Background(), md)
-	ctx = rt.WithRequestID(ctx, "opa-custom-789")
-
-	if err := ep.Verify(ctx, "posts", "read"); err != nil {
+	if err := ep.Verify(ctxWithBearerToken("token"), "posts", "read"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	if capturedHeader != "opa-custom-789" {
 		t.Errorf("X-Correlation-Id = %q, want %q", capturedHeader, "opa-custom-789")
+	}
+}
+
+// TestOPAVerify_WithRequestIDFunc verifies that a custom function is used to extract the request ID.
+func TestOPAVerify_WithRequestIDFunc(t *testing.T) {
+	var capturedRequestID string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedRequestID = r.Header.Get("x-request-id")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		result := true
+		resp := opaResponse{Result: &result}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	ep, err := NewOPAEndpoint(server.URL, "authz/allow", WithOPARequestIDFunc(func(ctx context.Context) string {
+		return "opa-func-injected-id"
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if err := ep.Verify(ctxWithBearerToken("token"), "posts", "read"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if capturedRequestID != "opa-func-injected-id" {
+		t.Errorf("x-request-id = %q, want %q", capturedRequestID, "opa-func-injected-id")
 	}
 }
 
@@ -351,15 +381,17 @@ func TestOPAVerify_WithRequestIDHeaderKey_Empty_DisablesForwarding(t *testing.T)
 	}))
 	defer server.Close()
 
-	ep, err := NewOPAEndpoint(server.URL, "authz/allow", WithOPARequestIDHeaderKey(""))
+	ep, err := NewOPAEndpoint(server.URL, "authz/allow",
+		WithOPARequestIDHeaderKey(""),
+		WithOPARequestIDFunc(func(ctx context.Context) string {
+			return "should-not-forward"
+		}),
+	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	ctx := ctxWithBearerToken("token")
-	ctx = rt.WithRequestID(ctx, "should-not-forward")
-
-	if err := ep.Verify(ctx, "posts", "read"); err != nil {
+	if err := ep.Verify(ctxWithBearerToken("token"), "posts", "read"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
