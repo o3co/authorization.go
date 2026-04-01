@@ -17,11 +17,13 @@ package tokenintrospection
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -34,12 +36,19 @@ const (
 	defaultMaxResponseBodySize = 1024 * 1024 // 1MB
 )
 
+// authFunc returns an HTTP header key/value pair for endpoint authentication.
+// The credential parameter is the token being inspected (used by WithSelfIntrospect).
+// If authFunc is nil, no Authorization header is sent.
+type authFunc func(credential string) (key, value string)
+
 type rfc7662Config struct {
 	timeout             time.Duration
 	maxResponseBodySize int64
 	logger              *slog.Logger
 	requestIDFunc       func(context.Context) string
 	requestIDHeaderKey  string
+	authFunc            authFunc
+	useJSONBody         bool
 }
 
 // RFC7662Option configures the RFC 7662 introspection backend.
@@ -81,6 +90,46 @@ func WithMaxResponseBodySize(size int64) RFC7662Option {
 	}
 }
 
+// WithClientCredentials sets Basic authentication for the introspection endpoint.
+// This is the recommended mode for production (RFC 7662 §2.1).
+func WithClientCredentials(clientID, clientSecret string) RFC7662Option {
+	return func(c *rfc7662Config) {
+		encoded := base64.StdEncoding.EncodeToString([]byte(clientID + ":" + clientSecret))
+		c.authFunc = func(_ string) (string, string) {
+			return "Authorization", "Basic " + encoded
+		}
+	}
+}
+
+// WithBearerAuth sets a fixed service-level Bearer token for the introspection endpoint.
+func WithBearerAuth(token string) RFC7662Option {
+	return func(c *rfc7662Config) {
+		c.authFunc = func(_ string) (string, string) {
+			return "Authorization", "Bearer " + token
+		}
+	}
+}
+
+// WithSelfIntrospect forwards the inspected token as Bearer authentication.
+// This is the legacy behavior — the token being inspected is reused as the
+// endpoint credential. Suitable for internal networks where the introspection
+// endpoint trusts the caller implicitly.
+func WithSelfIntrospect() RFC7662Option {
+	return func(c *rfc7662Config) {
+		c.authFunc = func(credential string) (string, string) {
+			return "Authorization", "Bearer " + credential
+		}
+	}
+}
+
+// WithJSONBody switches the request body format to application/json.
+// By default, the introspector uses application/x-www-form-urlencoded per RFC 7662 §2.1.
+func WithJSONBody() RFC7662Option {
+	return func(c *rfc7662Config) {
+		c.useJSONBody = true
+	}
+}
+
 // WithRFC7662LogLevel sets the log level for the RFC 7662 backend.
 func WithRFC7662LogLevel(level slog.Level) RFC7662Option {
 	return func(c *rfc7662Config) {
@@ -95,6 +144,8 @@ type rfc7662Introspector struct {
 	logger              *slog.Logger
 	requestIDFunc       func(context.Context) string
 	requestIDHeaderKey  string
+	authFunc            authFunc
+	useJSONBody         bool
 }
 
 // NewRFC7662Introspector creates an Introspector that calls an RFC 7662 compliant
@@ -126,6 +177,8 @@ func NewRFC7662Introspector(introspectURL string, opts ...RFC7662Option) (Intros
 		logger:              cfg.logger,
 		requestIDFunc:       cfg.requestIDFunc,
 		requestIDHeaderKey:  cfg.requestIDHeaderKey,
+		authFunc:            cfg.authFunc,
+		useJSONBody:         cfg.useJSONBody,
 	}, nil
 }
 
@@ -133,9 +186,18 @@ func (i *rfc7662Introspector) Scheme() string { return "bearer" }
 
 func (i *rfc7662Introspector) Introspect(ctx context.Context, credential string) (*IntrospectionResult, error) {
 	// Build request body
-	reqBody, err := json.Marshal(map[string]string{"token": credential})
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to marshal request body: %v", err)
+	var reqBody []byte
+	var contentType string
+	if i.useJSONBody {
+		var err error
+		reqBody, err = json.Marshal(map[string]string{"token": credential})
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to marshal request body: %v", err)
+		}
+		contentType = "application/json"
+	} else {
+		reqBody = []byte(url.Values{"token": {credential}}.Encode())
+		contentType = "application/x-www-form-urlencoded"
 	}
 
 	// Create HTTP request
@@ -144,9 +206,14 @@ func (i *rfc7662Introspector) Introspect(ctx context.Context, credential string)
 		return nil, status.Errorf(codes.Internal, "failed to create request: %v", err)
 	}
 
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Bearer "+credential)
+
+	// Set endpoint authentication
+	if i.authFunc != nil {
+		key, value := i.authFunc(credential)
+		req.Header.Set(key, value)
+	}
 
 	// Forward request ID if configured
 	if i.requestIDFunc != nil {

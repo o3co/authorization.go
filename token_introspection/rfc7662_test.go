@@ -16,6 +16,7 @@ package tokenintrospection
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -25,6 +26,10 @@ import (
 
 	"google.golang.org/grpc/codes"
 )
+
+func base64Encode(s string) string {
+	return base64.StdEncoding.EncodeToString([]byte(s))
+}
 
 // Verify Scheme() returns "bearer".
 func TestRFC7662_Scheme(t *testing.T) {
@@ -221,12 +226,14 @@ func TestRFC7662_WithRequestIDHeaderKey(t *testing.T) {
 	}
 }
 
-// Verify the request body contains the token.
-func TestRFC7662_RequestBody(t *testing.T) {
-	var body map[string]string
+// Verify default body is application/x-www-form-urlencoded with token=<value>.
+func TestRFC7662_DefaultFormURLEncoded(t *testing.T) {
+	var capturedContentType string
+	var capturedBody string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedContentType = r.Header.Get("Content-Type")
 		raw, _ := io.ReadAll(r.Body)
-		_ = json.Unmarshal(raw, &body)
+		capturedBody = string(raw)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(map[string]any{"active": true, "sub": "u"})
@@ -236,13 +243,37 @@ func TestRFC7662_RequestBody(t *testing.T) {
 	ep, _ := NewRFC7662Introspector(server.URL)
 	_, _ = ep.Introspect(context.Background(), "my-jwt-token")
 
-	if body["token"] != "my-jwt-token" {
-		t.Errorf("body[token] = %q, want %q", body["token"], "my-jwt-token")
+	if capturedContentType != "application/x-www-form-urlencoded" {
+		t.Errorf("Content-Type = %q, want %q", capturedContentType, "application/x-www-form-urlencoded")
+	}
+	if capturedBody != "token=my-jwt-token" {
+		t.Errorf("body = %q, want %q", capturedBody, "token=my-jwt-token")
 	}
 }
 
-// Verify Authorization: Bearer <token> is set on the request.
-func TestRFC7662_AuthorizationHeader(t *testing.T) {
+// Verify special characters in token are properly URL-encoded.
+func TestRFC7662_FormURLEncoded_SpecialChars(t *testing.T) {
+	var capturedBody string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		capturedBody = string(raw)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{"active": true, "sub": "u"})
+	}))
+	defer server.Close()
+
+	ep, _ := NewRFC7662Introspector(server.URL)
+	_, _ = ep.Introspect(context.Background(), "token+with=special&chars")
+
+	want := "token=token%2Bwith%3Dspecial%26chars"
+	if capturedBody != want {
+		t.Errorf("body = %q, want %q", capturedBody, want)
+	}
+}
+
+// Verify no Authorization header is sent by default.
+func TestRFC7662_DefaultNoAuthHeader(t *testing.T) {
 	var capturedAuth string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedAuth = r.Header.Get("Authorization")
@@ -253,6 +284,64 @@ func TestRFC7662_AuthorizationHeader(t *testing.T) {
 	defer server.Close()
 
 	ep, _ := NewRFC7662Introspector(server.URL)
+	_, _ = ep.Introspect(context.Background(), "my-jwt-token")
+
+	if capturedAuth != "" {
+		t.Errorf("Authorization = %q, want empty (no auth by default)", capturedAuth)
+	}
+}
+
+// Verify WithClientCredentials sends Basic auth.
+func TestRFC7662_WithClientCredentials(t *testing.T) {
+	var capturedAuth string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{"active": true, "sub": "u"})
+	}))
+	defer server.Close()
+
+	ep, _ := NewRFC7662Introspector(server.URL, WithClientCredentials("my-client", "my-secret"))
+	_, _ = ep.Introspect(context.Background(), "some-token")
+
+	want := "Basic " + base64Encode("my-client:my-secret")
+	if capturedAuth != want {
+		t.Errorf("Authorization = %q, want %q", capturedAuth, want)
+	}
+}
+
+// Verify WithBearerAuth sends a fixed Bearer token.
+func TestRFC7662_WithBearerAuth(t *testing.T) {
+	var capturedAuth string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{"active": true, "sub": "u"})
+	}))
+	defer server.Close()
+
+	ep, _ := NewRFC7662Introspector(server.URL, WithBearerAuth("service-token-xyz"))
+	_, _ = ep.Introspect(context.Background(), "user-token")
+
+	if capturedAuth != "Bearer service-token-xyz" {
+		t.Errorf("Authorization = %q, want %q", capturedAuth, "Bearer service-token-xyz")
+	}
+}
+
+// Verify WithSelfIntrospect forwards the inspected token as Bearer.
+func TestRFC7662_WithSelfIntrospect(t *testing.T) {
+	var capturedAuth string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{"active": true, "sub": "u"})
+	}))
+	defer server.Close()
+
+	ep, _ := NewRFC7662Introspector(server.URL, WithSelfIntrospect())
 	_, _ = ep.Introspect(context.Background(), "my-jwt-token")
 
 	if capturedAuth != "Bearer my-jwt-token" {
