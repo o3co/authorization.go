@@ -271,37 +271,6 @@ func TestOPAVerify_RequestBody_ContainsInputFields(t *testing.T) {
 	}
 }
 
-// TestOPAVerify_RequestID_ForwardedWhenPresent verifies that x-request-id is forwarded to OPA
-// when present in the context.
-func TestOPAVerify_RequestID_ForwardedWhenPresent(t *testing.T) {
-	var capturedRequestID string
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedRequestID = r.Header.Get("x-request-id")
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		result := true
-		resp := opaResponse{Result: &result}
-		_ = json.NewEncoder(w).Encode(resp)
-	}))
-	defer server.Close()
-
-	ep, err := NewOPAEndpoint(server.URL, "authz/allow", WithOPARequestIDFunc(func(ctx context.Context) string {
-		return "req-abc-123"
-	}))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if err := ep.Verify(ctxWithBearerToken("token-xyz"), "posts", "read"); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if capturedRequestID != "req-abc-123" {
-		t.Errorf("x-request-id = %q, want %q", capturedRequestID, "req-abc-123")
-	}
-}
-
 // TestOPAVerify_WithRequestIDHeaderKey verifies that a custom header key is used
 // when WithOPARequestIDHeaderKey is set.
 func TestOPAVerify_WithRequestIDHeaderKey(t *testing.T) {

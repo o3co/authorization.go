@@ -100,9 +100,10 @@ func ExampleNewRESTEndpoint_withRequestIDFunc() {
 	// Or use a custom extraction function:
 	verifier, err := endpoint.NewRESTEndpoint(
 		"http://auth-service:8080",
+		// Returning a non-empty value enables request ID header forwarding.
+		// Returning "" disables forwarding for that request.
 		endpoint.WithRequestIDFunc(func(ctx context.Context) string {
-			// Extract request ID from your preferred source.
-			return ""
+			return "sample-request-id"
 		}),
 	)
 	if err != nil {
