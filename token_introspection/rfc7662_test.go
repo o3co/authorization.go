@@ -50,7 +50,7 @@ func TestRFC7662_ActiveTrue_ReturnsResult(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"active": true,
 			"sub":    "user-42",
-			"scopes": []string{"read", "write"},
+			"scope":  "read write",
 			"exp":    1735689600, // 2025-01-01T00:00:00Z
 			"iss":    "auth.provider",
 		})
@@ -114,18 +114,19 @@ func TestRFC7662_500_ReturnsInternal(t *testing.T) {
 	assertGRPCCode(t, err, codes.Internal)
 }
 
-// Verify claim mapping: sub, scopes, exp go to struct fields; rest to Claims.
+// Verify claim mapping: sub, scope, exp, token_type go to struct fields; rest to Claims.
 func TestRFC7662_ClaimMapping(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"active":  true,
-			"sub":     "user-99",
-			"scopes":  []string{"admin"},
-			"exp":     1735689600,
-			"aud":     "my-app",
-			"client":  map[string]any{"id": "client-1"},
+			"active":     true,
+			"sub":        "user-99",
+			"scope":      "admin",
+			"exp":        1735689600,
+			"token_type": "at+jwt",
+			"aud":        "my-app",
+			"azp":        "client-1",
 		})
 	}))
 	defer server.Close()
@@ -145,12 +146,12 @@ func TestRFC7662_ClaimMapping(t *testing.T) {
 		t.Errorf("ExpiresAt = %v, want %v", result.ExpiresAt, wantExp)
 	}
 
-	// Claims should contain aud, client but NOT sub, scopes, exp, active
+	// Claims should contain aud, azp but NOT sub, scope, exp, active, token_type
 	if _, ok := result.Claims["sub"]; ok {
 		t.Error("Claims should not contain 'sub' (promoted to Subject)")
 	}
-	if _, ok := result.Claims["scopes"]; ok {
-		t.Error("Claims should not contain 'scopes' (promoted to Scopes)")
+	if _, ok := result.Claims["scope"]; ok {
+		t.Error("Claims should not contain 'scope' (promoted to Scopes)")
 	}
 	if _, ok := result.Claims["exp"]; ok {
 		t.Error("Claims should not contain 'exp' (promoted to ExpiresAt)")
@@ -158,8 +159,14 @@ func TestRFC7662_ClaimMapping(t *testing.T) {
 	if _, ok := result.Claims["active"]; ok {
 		t.Error("Claims should not contain 'active'")
 	}
+	if _, ok := result.Claims["token_type"]; ok {
+		t.Error("Claims should not contain 'token_type' (promoted field)")
+	}
 	if result.Claims["aud"] != "my-app" {
 		t.Errorf("Claims[aud] = %v, want %q", result.Claims["aud"], "my-app")
+	}
+	if result.Claims["azp"] != "client-1" {
+		t.Errorf("Claims[azp] = %v, want %q", result.Claims["azp"], "client-1")
 	}
 }
 
@@ -408,30 +415,6 @@ func TestRFC7662_ScopeString(t *testing.T) {
 	}
 	if _, ok := result.Claims["scope"]; ok {
 		t.Error("Claims should not contain 'scope' (promoted to Scopes)")
-	}
-}
-
-// Verify "scopes" (array) takes precedence over "scope" (string) when both are present.
-func TestRFC7662_ScopesArrayPrecedence(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"active": true,
-			"sub":    "user-1",
-			"scope":  "read",
-			"scopes": []string{"write", "admin"},
-		})
-	}))
-	defer server.Close()
-
-	ep, _ := NewRFC7662Introspector(server.URL)
-	result, err := ep.Introspect(context.Background(), "token")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(result.Scopes) != 2 || result.Scopes[0] != "write" || result.Scopes[1] != "admin" {
-		t.Errorf("Scopes = %v, want [write admin] (scopes array should take precedence)", result.Scopes)
 	}
 }
 
