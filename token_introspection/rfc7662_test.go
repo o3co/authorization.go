@@ -146,12 +146,17 @@ func TestRFC7662_ClaimMapping(t *testing.T) {
 		t.Errorf("ExpiresAt = %v, want %v", result.ExpiresAt, wantExp)
 	}
 
+	// Scopes
+	if len(result.Scopes) != 1 || result.Scopes[0] != "admin" {
+		t.Errorf("Scopes = %v, want [admin]", result.Scopes)
+	}
+
 	// TokenType
 	if result.TokenType != "at+jwt" {
 		t.Errorf("TokenType = %q, want %q", result.TokenType, "at+jwt")
 	}
 
-	// Claims should contain aud, azp but NOT sub, scope, exp, active, token_type
+	// Claims should contain aud, azp but NOT sub, scope, scopes, exp, active, token_type
 	if _, ok := result.Claims["sub"]; ok {
 		t.Error("Claims should not contain 'sub' (promoted to Subject)")
 	}
@@ -172,6 +177,37 @@ func TestRFC7662_ClaimMapping(t *testing.T) {
 	}
 	if result.Claims["azp"] != "client-1" {
 		t.Errorf("Claims[azp] = %v, want %q", result.Claims["azp"], "client-1")
+	}
+}
+
+// Legacy scopes array should be ignored (not leak into Claims), only scope string is used.
+func TestRFC7662_LegacyScopesArrayIgnored(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"active": true,
+			"sub":    "user-1",
+			"scope":  "read write",
+			"scopes": []string{"admin", "superuser"},
+		})
+	}))
+	defer server.Close()
+
+	ep, _ := NewRFC7662Introspector(server.URL)
+	result, err := ep.Introspect(context.Background(), "token")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Scopes should come from "scope" string, not "scopes" array
+	if len(result.Scopes) != 2 || result.Scopes[0] != "read" || result.Scopes[1] != "write" {
+		t.Errorf("Scopes = %v, want [read write]", result.Scopes)
+	}
+
+	// Legacy "scopes" should not leak into Claims
+	if _, ok := result.Claims["scopes"]; ok {
+		t.Error("Claims should not contain legacy 'scopes' array (promoted/dropped)")
 	}
 }
 

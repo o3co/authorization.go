@@ -298,7 +298,7 @@ func (i *rfc7662Introspector) Introspect(ctx context.Context, credential string)
 	}
 
 	// Remaining claims (exclude promoted fields)
-	promoted := map[string]bool{"active": true, "sub": true, "scope": true, "exp": true, "token_type": true}
+	promoted := map[string]bool{"active": true, "sub": true, "scope": true, "scopes": true, "exp": true, "token_type": true}
 	for k, v := range raw {
 		if !promoted[k] {
 			result.Claims[k] = v
