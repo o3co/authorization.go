@@ -292,6 +292,11 @@ func (i *rfc7662Introspector) Introspect(ctx context.Context, credential string)
 		result.ExpiresAt = time.Unix(int64(exp), 0).UTC()
 	}
 
+	// TokenType
+	if tt, ok := raw["token_type"].(string); ok {
+		result.TokenType = tt
+	}
+
 	// Remaining claims (exclude promoted fields)
 	promoted := map[string]bool{"active": true, "sub": true, "scope": true, "exp": true, "token_type": true}
 	for k, v := range raw {

@@ -146,6 +146,11 @@ func TestRFC7662_ClaimMapping(t *testing.T) {
 		t.Errorf("ExpiresAt = %v, want %v", result.ExpiresAt, wantExp)
 	}
 
+	// TokenType
+	if result.TokenType != "at+jwt" {
+		t.Errorf("TokenType = %q, want %q", result.TokenType, "at+jwt")
+	}
+
 	// Claims should contain aud, azp but NOT sub, scope, exp, active, token_type
 	if _, ok := result.Claims["sub"]; ok {
 		t.Error("Claims should not contain 'sub' (promoted to Subject)")
