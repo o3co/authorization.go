@@ -40,5 +40,6 @@ type IntrospectionResult struct {
 	Subject   string         // sub — the authenticated user/entity
 	Scopes    []string       // granted scopes
 	ExpiresAt time.Time      // expiration (zero value if not set)
-	Claims    map[string]any // additional claims (aud, iss, client, user, etc.)
+	TokenType string         // token_type — e.g. "at+jwt", "rt+jwt"
+	Claims    map[string]any // additional claims (aud, iss, azp, etc.)
 }
