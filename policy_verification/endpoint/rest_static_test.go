@@ -221,7 +221,7 @@ func TestMatchPattern_PrefixWildcard_NoMatch(t *testing.T) {
 }
 
 // helper to create context with bearer token using metadata directly
-// (ctxWithBearerToken is already available in rest_o3_policy_verifier_test.go)
+// (ctxWithBearerToken is already available in rest_policy_verifier_test.go)
 func ctxWithMetadataBearerToken(token string) context.Context {
 	md := metadata.Pairs("authorization", "Bearer "+token)
 	return metadata.NewIncomingContext(context.Background(), md)

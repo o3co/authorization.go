@@ -1,6 +1,6 @@
 # protobuf_policy_option
 
-`protobuf_policy_option` は protobuf レジストリから `(o3.policy)` カスタムメソッドオプションを読み取り、リソース文字列内の `<placeholder>` トークンを受信リクエストのフィールドで解決し、結果を後続インターセプターが参照できるよう `context.Context` に格納する gRPC サーバーインターセプターモジュールです。`grpc.authz` を構成する 2 つのモジュールのうちの 1 つで、ポリシーの宣言と解決側を担います。適用（enforcement）側は `policy_verification` が担当します。
+`protobuf_policy_option` は protobuf レジストリから `(policy.v1.policy)` カスタムメソッドオプションを読み取り、リソース文字列内の `<placeholder>` トークンを受信リクエストのフィールドで解決し、結果を後続インターセプターが参照できるよう `context.Context` に格納する gRPC サーバーインターセプターモジュールです。`grpc.authz` を構成する 2 つのモジュールのうちの 1 つで、ポリシーの宣言と解決側を担います。適用（enforcement）側は `policy_verification` が担当します。
 
 ## パブリック API
 
@@ -12,7 +12,7 @@ func Interceptor(opts ...Option) grpc.UnaryServerInterceptor
 
 各 RPC 呼び出しに対して以下を行う Unary サーバーインターセプターを返します。
 
-1. proto レジストリから `(o3.policy)` メソッドオプションを検索する（初回以降はインターセプターインスタンスごとにキャッシュ）。
+1. proto レジストリから `(policy.v1.policy)` メソッドオプションを検索する（初回以降はインターセプターインスタンスごとにキャッシュ）。
 2. `policy_verification.Interceptor` がチェーン設定ミスを検出できるよう、自身が実行されたことを context にマークする。
 3. ポリシーオプションが見つからない場合は次のハンドラーへ通過する。
 4. `field_mappings` とリクエストフィールドを使ってリソース文字列内の `<placeholder>` トークンを解決する。
@@ -59,7 +59,7 @@ type Policy struct {
 
 ## Proto のセットアップ
 
-`(o3.policy)` メソッドオプション拡張を使うには、`.proto` ファイルに `policy.proto`（`schema` サブパッケージ）をインポートしてください。
+`(policy.v1.policy)` メソッドオプション拡張を使うには、`.proto` ファイルに `policy.proto`（`schema` サブパッケージ）をインポートしてください。
 
 ```proto
 syntax = "proto3";
@@ -68,7 +68,7 @@ import "policy.proto";
 
 service ItemService {
   rpc GetItem(GetItemRequest) returns (GetItemResponse) {
-    option (o3.policy) = {
+    option (policy.v1.policy) = {
       resource: "items/<id>"
       action:   "read"
       field_mappings: [

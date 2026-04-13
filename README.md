@@ -20,7 +20,7 @@ gRPC request
      │
      ▼
 ┌─────────────────────────────────────────┐
-│  protobuf_policy_option.Interceptor     │  reads (o3.policy) option from .proto,
+│  protobuf_policy_option.Interceptor     │  reads (policy.v1.policy) option from .proto,
 │                                         │  resolves field_mappings from request,
 │                                         │  injects Policy{Resource, Action} into ctx
 └──────────────────┬──────────────────────┘
@@ -40,7 +40,7 @@ The two modules are independent Go modules with a deliberate split of responsibi
 
 | Module | Responsibility |
 | --- | --- |
-| `protobuf_policy_option` | Reads the `(o3.policy)` method option from the proto registry, resolves `<placeholder>` tokens using request fields, and stores the result in `context.Context` |
+| `protobuf_policy_option` | Reads the `(policy.v1.policy)` method option from the proto registry, resolves `<placeholder>` tokens using request fields, and stores the result in `context.Context` |
 | `policy_verification` | Reads the resolved policy from context, calls an external authorization server via `POST /verify`, and translates the HTTP response into the appropriate gRPC status code |
 
 Keeping them separate means you can swap the authorization backend (e.g. a gRPC verifier instead of REST) without touching the policy declaration layer, and you can unit-test each concern in isolation.
@@ -94,18 +94,18 @@ grpc.NewServer(
 
 ## Proto option reference
 
-Declare the `(o3.policy)` option on any method that requires authorization:
+Declare the `(policy.v1.policy)` option on any method that requires authorization:
 
 ```proto
 syntax = "proto3";
 
-import "policy.proto";  // provides the (o3.policy) extension
+import "policy.proto";  // provides the (policy.v1.policy) extension
 
 service PostService {
 
   // Static resource — no field extraction needed
   rpc ListPosts(ListPostsRequest) returns (ListPostsResponse) {
-    option (o3.policy) = {
+    option (policy.v1.policy) = {
       resource: "posts"   // literal resource identifier sent to /verify
       action: "list"      // action string sent to /verify
     };
@@ -113,7 +113,7 @@ service PostService {
 
   // Dynamic resource — placeholder resolved from request field
   rpc GetPost(GetPostRequest) returns (GetPostResponse) {
-    option (o3.policy) = {
+    option (policy.v1.policy) = {
       resource: "posts/<id>"          // <id> is replaced at runtime
       action: "read"
       field_mappings: [
@@ -177,7 +177,7 @@ func main() {
 }
 ```
 
-Methods without an `(o3.policy)` option are passed through without any authorization check.
+Methods without a `(policy.v1.policy)` option are passed through without any authorization check.
 
 ## Streaming RPC
 
@@ -196,7 +196,7 @@ For streaming RPCs, authorization is checked on **every `RecvMsg` call**, not ju
 
 ```proto
 rpc WatchPosts(WatchPostsRequest) returns (stream Post) {
-  option (o3.policy) = {
+  option (policy.v1.policy) = {
     resource: "posts"   // static — no field_mappings
     action: "watch"
   };

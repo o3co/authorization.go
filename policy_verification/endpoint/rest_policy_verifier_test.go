@@ -52,7 +52,7 @@ func TestNewRESTEndpoint_ValidURL_AppendsVerifyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	r := ep.(*restO3PolicyVerifierEndpoint)
+	r := ep.(*restPolicyVerifierEndpoint)
 	if r.verifyURL != "http://localhost:8080/verify" {
 		t.Errorf("verifyURL = %q, want %q", r.verifyURL, "http://localhost:8080/verify")
 	}
@@ -64,7 +64,7 @@ func TestNewRESTEndpoint_TrailingSlash_NormalizedCorrectly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	r := ep.(*restO3PolicyVerifierEndpoint)
+	r := ep.(*restPolicyVerifierEndpoint)
 	if r.verifyURL != "http://localhost:8080/verify" {
 		t.Errorf("verifyURL = %q, want %q", r.verifyURL, "http://localhost:8080/verify")
 	}
@@ -76,7 +76,7 @@ func TestNewRESTEndpoint_WithBasePath_AppendsVerify(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	r := ep.(*restO3PolicyVerifierEndpoint)
+	r := ep.(*restPolicyVerifierEndpoint)
 	if r.verifyURL != "http://localhost:8080/api/v1/verify" {
 		t.Errorf("verifyURL = %q, want %q", r.verifyURL, "http://localhost:8080/api/v1/verify")
 	}
@@ -88,7 +88,7 @@ func TestNewRESTEndpoint_NoScheme_DefaultsToHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	r := ep.(*restO3PolicyVerifierEndpoint)
+	r := ep.(*restPolicyVerifierEndpoint)
 	if r.verifyURL != "http://localhost:8080/verify" {
 		t.Errorf("verifyURL = %q, want %q", r.verifyURL, "http://localhost:8080/verify")
 	}
@@ -122,7 +122,7 @@ func TestWithTimeout_Valid_SetsClientTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	r := ep.(*restO3PolicyVerifierEndpoint)
+	r := ep.(*restPolicyVerifierEndpoint)
 	if r.httpClient.Timeout != 5*time.Second {
 		t.Errorf("timeout = %v, want %v", r.httpClient.Timeout, 5*time.Second)
 	}
@@ -156,7 +156,7 @@ func TestWithMaxResponseBodySize_Valid_SetsField(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	r := ep.(*restO3PolicyVerifierEndpoint)
+	r := ep.(*restPolicyVerifierEndpoint)
 	if r.maxResponseBodySize != 512 {
 		t.Errorf("maxResponseBodySize = %d, want 512", r.maxResponseBodySize)
 	}

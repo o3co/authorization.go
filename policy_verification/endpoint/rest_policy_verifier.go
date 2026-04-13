@@ -36,7 +36,7 @@ const defaultTimeout = 10 * time.Second
 
 // buildConfig は NewRESTEndpoint の構築時にのみ使用する一時設定。
 // timeout など構築後に不要なフィールドをここで管理することで、
-// restO3PolicyVerifierEndpoint の struct を実行時に必要なフィールドのみに絞る。
+// restPolicyVerifierEndpoint の struct を実行時に必要なフィールドのみに絞る。
 type buildConfig struct {
 	timeout              time.Duration
 	maxResponseBodySize  int64
@@ -45,7 +45,7 @@ type buildConfig struct {
 	requestIDFunc        func(context.Context) string
 }
 
-// Option はo3 REST エンドポイントの設定オプション
+// Option は REST エンドポイントの設定オプション
 type Option func(*buildConfig)
 
 // WithTimeout HTTP クライアントのタイムアウトを設定する。未指定時のデフォルトは 10s。
@@ -93,8 +93,8 @@ func WithRequestIDFunc(fn func(context.Context) string) Option {
 	}
 }
 
-// restO3PolicyVerifierEndpoint は o3 独自規格の REST 認可サービスへの VerifierEndpoint 実装
-type restO3PolicyVerifierEndpoint struct {
+// restPolicyVerifierEndpoint は REST 認可サービスへの VerifierEndpoint 実装
+type restPolicyVerifierEndpoint struct {
 	httpClient           *http.Client
 	verifyURL            string
 	maxResponseBodySize  int64
@@ -103,7 +103,7 @@ type restO3PolicyVerifierEndpoint struct {
 	requestIDFunc        func(context.Context) string
 }
 
-// NewRESTEndpoint o3 REST 認可エンドポイントのコンストラクタ。
+// NewRESTEndpoint REST 認可エンドポイントのコンストラクタ。
 // baseURL が不正な場合はエラーを返す。
 func NewRESTEndpoint(baseURL string, opts ...Option) (VerifierEndpoint, error) {
 	rawBase := strings.TrimSpace(baseURL)
@@ -132,7 +132,7 @@ func NewRESTEndpoint(baseURL string, opts ...Option) (VerifierEndpoint, error) {
 		opt(cfg)
 	}
 
-	return &restO3PolicyVerifierEndpoint{
+	return &restPolicyVerifierEndpoint{
 		httpClient:          &http.Client{Timeout: cfg.timeout},
 		verifyURL:           base.String(),
 		maxResponseBodySize: cfg.maxResponseBodySize,
@@ -168,7 +168,7 @@ func getToken(ctx context.Context) (*token, error) {
 }
 
 // Verify 権限チェックを実行する。
-func (e *restO3PolicyVerifierEndpoint) Verify(ctx context.Context, resource, action string) error {
+func (e *restPolicyVerifierEndpoint) Verify(ctx context.Context, resource, action string) error {
 	// --- 認可トークン取得 -------------------------------------------------
 	tok, err := getToken(ctx)
 	if err != nil {
