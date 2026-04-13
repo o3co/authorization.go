@@ -1,6 +1,6 @@
 # protobuf_policy_option
 
-`protobuf_policy_option` is a gRPC server interceptor module that reads the `(o3.policy)` custom method option from the protobuf registry, resolves `<placeholder>` tokens in the resource string using fields from the incoming request, and stores the result in `context.Context` for downstream interceptors to consume. It is one of two modules that make up `grpc.authz`; it handles the policy declaration and resolution side, while `policy_verification` handles the enforcement side.
+`protobuf_policy_option` is a gRPC server interceptor module that reads the `(o3co.authz.v1.policy)` custom method option from the protobuf registry, resolves `<placeholder>` tokens in the resource string using fields from the incoming request, and stores the result in `context.Context` for downstream interceptors to consume. It is one of two modules that make up `grpc.authz`; it handles the policy declaration and resolution side, while `policy_verification` handles the enforcement side.
 
 ## Public API
 
@@ -12,7 +12,7 @@ func Interceptor(opts ...Option) grpc.UnaryServerInterceptor
 
 Returns a unary server interceptor that, for each RPC call:
 
-1. Looks up the `(o3.policy)` method option from the proto registry (result is cached per interceptor instance after the first call).
+1. Looks up the `(o3co.authz.v1.policy)` method option from the proto registry (result is cached per interceptor instance after the first call).
 2. Marks itself as ran in context so `policy_verification.Interceptor` can detect misconfiguration.
 3. If no policy option is found, passes through to the next handler.
 4. Resolves any `<placeholder>` tokens in the resource string using `field_mappings` and request fields.
@@ -59,7 +59,7 @@ type Policy struct {
 
 ## Proto setup
 
-Import `policy.proto` (from the `schema` sub-package) in your `.proto` files to access the `(o3.policy)` method option extension:
+Import `policy.proto` (from the `schema` sub-package) in your `.proto` files to access the `(o3co.authz.v1.policy)` method option extension:
 
 ```proto
 syntax = "proto3";
@@ -68,7 +68,7 @@ import "policy.proto";
 
 service ItemService {
   rpc GetItem(GetItemRequest) returns (GetItemResponse) {
-    option (o3.policy) = {
+    option (o3co.authz.v1.policy) = {
       resource: "items/<id>"
       action:   "read"
       field_mappings: [
@@ -79,7 +79,7 @@ service ItemService {
 }
 ```
 
-The option is defined in the `policy.v1` protobuf package with field number `50000`.
+The option is defined in the `o3co.authz.v1` protobuf package with field number `50000`.
 
 ## field_mappings explanation
 

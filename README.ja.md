@@ -20,7 +20,7 @@ gRPC リクエスト
      │
      ▼
 ┌─────────────────────────────────────────┐
-│  protobuf_policy_option.Interceptor     │  .proto の (o3.policy) オプションを読み取り、
+│  protobuf_policy_option.Interceptor     │  .proto の (o3co.authz.v1.policy) オプションを読み取り、
 │                                         │  field_mappings でリクエストから値を解決し、
 │                                         │  Policy{Resource, Action} を ctx に注入
 └──────────────────┬──────────────────────┘
@@ -40,7 +40,7 @@ gRPC リクエスト
 
 | モジュール | 責務 |
 | --- | --- |
-| `protobuf_policy_option` | proto レジストリから `(o3.policy)` メソッドオプションを読み取り、`<placeholder>` トークンをリクエストフィールドで解決し、結果を `context.Context` に格納 |
+| `protobuf_policy_option` | proto レジストリから `(o3co.authz.v1.policy)` メソッドオプションを読み取り、`<placeholder>` トークンをリクエストフィールドで解決し、結果を `context.Context` に格納 |
 | `policy_verification` | コンテキストから解決済みポリシーを読み取り、外部認可サーバーに `POST /verify` で問い合わせ、HTTP レスポンスを適切な gRPC ステータスコードに変換 |
 
 分離することで、ポリシー宣言レイヤーに触れずに認可バックエンド（REST の代わりに gRPC など）を差し替え可能で、各関心事を独立してテストできます。
@@ -94,18 +94,18 @@ grpc.NewServer(
 
 ## Proto オプションリファレンス
 
-認可が必要なメソッドに `(o3.policy)` オプションを宣言します：
+認可が必要なメソッドに `(o3co.authz.v1.policy)` オプションを宣言します：
 
 ```proto
 syntax = "proto3";
 
-import "policy.proto";  // (o3.policy) 拡張を提供
+import "policy.proto";  // (o3co.authz.v1.policy) 拡張を提供
 
 service PostService {
 
   // 静的リソース — フィールド抽出不要
   rpc ListPosts(ListPostsRequest) returns (ListPostsResponse) {
-    option (o3.policy) = {
+    option (o3co.authz.v1.policy) = {
       resource: "posts"   // /verify に送信されるリソース識別子
       action: "list"      // /verify に送信されるアクション文字列
     };
@@ -113,7 +113,7 @@ service PostService {
 
   // 動的リソース — リクエストフィールドからプレースホルダーを解決
   rpc GetPost(GetPostRequest) returns (GetPostResponse) {
-    option (o3.policy) = {
+    option (o3co.authz.v1.policy) = {
       resource: "posts/<id>"          // <id> は実行時に置換
       action: "read"
       field_mappings: [
@@ -177,7 +177,7 @@ func main() {
 }
 ```
 
-`(o3.policy)` オプションのないメソッドは、認可チェックなしでそのまま通過します。
+`(o3co.authz.v1.policy)` オプションのないメソッドは、認可チェックなしでそのまま通過します。
 
 ## ストリーミング RPC
 
@@ -196,7 +196,7 @@ grpc.ChainStreamInterceptor(
 
 ```proto
 rpc WatchPosts(WatchPostsRequest) returns (stream Post) {
-  option (o3.policy) = {
+  option (o3co.authz.v1.policy) = {
     resource: "posts"   // 静的 — field_mappings なし
     action: "watch"
   };

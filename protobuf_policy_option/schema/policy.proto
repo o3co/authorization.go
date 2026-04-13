@@ -2,7 +2,7 @@
 syntax = "proto3";
 
 // パッケージ定義
-package policy.v1;
+package o3co.authz.v1;
 
 option go_package = "github.com/o3co/grpc.authz/protobuf_policy_option/schema;policy";
 
