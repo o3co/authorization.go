@@ -23,7 +23,7 @@
 // Annotate your gRPC methods in .proto:
 //
 //	rpc GetPost(GetPostRequest) returns (GetPostResponse) {
-//	    option (policy.v1.policy) = {
+//	    option (o3co.authz.v1.policy) = {
 //	        resource: "posts/{id}"
 //	        action:   "read"
 //	        field_mappings: [{placeholder: "id", field: "id"}]

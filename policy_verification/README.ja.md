@@ -14,7 +14,7 @@ func Interceptor(verifierEndpoint endpoint.VerifierEndpoint, opts ...Option) grp
 
 1. `x-request-id` を取得または生成し、context に格納する。
 2. `protobuf_policy_option.Interceptor` が実行済みかを確認する（未登録の場合は `codes.Internal` を返す）。
-3. context から解決済みポリシーを読み取る。ポリシーが設定されていない場合（メソッドに `(policy.v1.policy)` オプションがない場合）はそのまま通過する。
+3. context から解決済みポリシーを読み取る。ポリシーが設定されていない場合（メソッドに `(o3co.authz.v1.policy)` オプションがない場合）はそのまま通過する。
 4. `verifierEndpoint.Verify(ctx, resource, action)` を呼び出し、エラーがあればそのまま返す。
 
 ### StreamInterceptor

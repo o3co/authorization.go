@@ -14,7 +14,7 @@ Returns a unary server interceptor that, for each RPC call:
 
 1. Extracts or generates an `x-request-id` and stores it in context.
 2. Checks that `protobuf_policy_option.Interceptor` ran (returns `codes.Internal` if not).
-3. Reads the resolved policy from context. If no policy is set (method has no `(policy.v1.policy)` option), the request passes through.
+3. Reads the resolved policy from context. If no policy is set (method has no `(o3co.authz.v1.policy)` option), the request passes through.
 4. Calls `verifierEndpoint.Verify(ctx, resource, action)` and returns its error directly if non-nil.
 
 ### StreamInterceptor
