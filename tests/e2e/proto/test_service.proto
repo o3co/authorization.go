@@ -1,0 +1,32 @@
+syntax = "proto3";
+package test.v1;
+
+option go_package = "github.com/o3co/grpc.authz/tests/e2e/proto;testpb";
+
+import "schema/policy.proto";
+
+service TestService {
+  rpc GetResource(GetResourceRequest) returns (GetResourceResponse) {
+    option (o3co.authz.v1.policy) = {
+      resource: "resource"
+      action: "read"
+    };
+  }
+
+  rpc CreateResource(CreateResourceRequest) returns (CreateResourceResponse) {
+    option (o3co.authz.v1.policy) = {
+      resource: "resource"
+      action: "write"
+    };
+  }
+
+  // Method without policy option (should pass through)
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+message GetResourceRequest { string id = 1; }
+message GetResourceResponse { string id = 1; string name = 2; }
+message CreateResourceRequest { string name = 1; }
+message CreateResourceResponse { string id = 1; }
+message HealthCheckRequest {}
+message HealthCheckResponse { string status = 1; }
