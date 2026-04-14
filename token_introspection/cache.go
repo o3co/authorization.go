@@ -65,6 +65,7 @@ type inMemoryCache struct {
 	ttl        time.Duration
 	maxEntries int
 	entries    sync.Map
+	evictMu    sync.Mutex // guards the count+find+delete sequence in evictIfNeeded
 }
 
 // NewInMemoryCache creates an in-memory cache with the given TTL.
@@ -144,6 +145,9 @@ func (c *inMemoryCache) Set(key string, result *IntrospectionResult) {
 }
 
 func (c *inMemoryCache) evictIfNeeded() {
+	c.evictMu.Lock()
+	defer c.evictMu.Unlock()
+
 	var count int
 	c.entries.Range(func(_, _ any) bool {
 		count++
