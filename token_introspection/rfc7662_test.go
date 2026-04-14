@@ -345,7 +345,7 @@ func TestRFC7662_DefaultNoAuthHeader(t *testing.T) {
 	}
 }
 
-// Verify WithClientCredentials sends Basic auth with RFC 6749 §2.3.1 encoding.
+// Verify WithClientCredentials sends Basic auth per RFC 7617.
 func TestRFC7662_WithClientCredentials(t *testing.T) {
 	var capturedAuth string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -368,7 +368,7 @@ func TestRFC7662_WithClientCredentials(t *testing.T) {
 	}
 }
 
-// Verify WithClientCredentials URL-encodes special characters per RFC 6749 §2.3.1.
+// Verify WithClientCredentials percent-encodes special characters per RFC 7617 (Basic Auth).
 func TestRFC7662_WithClientCredentials_SpecialChars(t *testing.T) {
 	var capturedAuth string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -384,8 +384,8 @@ func TestRFC7662_WithClientCredentials_SpecialChars(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// ':' → %3A, ' ' → '+' per url.QueryEscape
-	want := "Basic " + base64Encode("client%3Aid:secret+with+spaces")
+	// ':' → %3A, ' ' → %20 per url.PathEscape (RFC 7617 percent-encoding)
+	want := "Basic " + base64Encode("client%3Aid:secret%20with%20spaces")
 	if capturedAuth != want {
 		t.Errorf("Authorization = %q, want %q", capturedAuth, want)
 	}

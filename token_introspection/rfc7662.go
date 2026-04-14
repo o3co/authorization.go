@@ -103,7 +103,10 @@ func WithClientCredentials(clientID, clientSecret string) RFC7662Option {
 	if clientSecret == "" {
 		panic("clientSecret must not be empty")
 	}
-	encoded := base64.StdEncoding.EncodeToString([]byte(url.QueryEscape(clientID) + ":" + url.QueryEscape(clientSecret)))
+	// RFC 7617: percent-encode credentials before base64. url.QueryEscape encodes
+	// spaces as '+', so replace '+' with '%20' to comply with RFC 3986 §2.1.
+	pctEncode := func(s string) string { return strings.ReplaceAll(url.QueryEscape(s), "+", "%20") }
+	encoded := base64.StdEncoding.EncodeToString([]byte(pctEncode(clientID) + ":" + pctEncode(clientSecret)))
 	return func(c *rfc7662Config) {
 		c.authFunc = func(_ string) (string, string) {
 			return "Authorization", "Basic " + encoded
