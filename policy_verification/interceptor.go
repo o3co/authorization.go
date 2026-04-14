@@ -31,8 +31,8 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// generateRequestID x-request-id を生成する。
-// フォーマット: YYYYMMDDHHmmss_<uuid-v4-no-dashes>
+// generateRequestID generates an x-request-id.
+// Format: YYYYMMDDHHmmss_<uuid-v4-no-dashes>
 func generateRequestID() string {
 	now := time.Now().UTC()
 	timestamp := now.Format("20060102150405")
@@ -49,8 +49,8 @@ func generateRequestID() string {
 	return fmt.Sprintf("%s_%x", timestamp, b)
 }
 
-// extractOrGenerateRequestID incoming metadata から x-request-id を取得し、
-// 存在しない場合は新たに生成して返す。
+// extractOrGenerateRequestID retrieves x-request-id from incoming metadata,
+// or generates a new one if not present.
 func extractOrGenerateRequestID(ctx context.Context) string {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if ok {
@@ -61,15 +61,15 @@ func extractOrGenerateRequestID(ctx context.Context) string {
 	return generateRequestID()
 }
 
-// config はインターセプターの設定
+// config holds interceptor configuration.
 type config struct {
 	logLevel slog.Level
 }
 
-// Option はインターセプターの設定オプション
+// Option configures the interceptor.
 type Option func(*config)
 
-// WithLogLevel ログレベルを指定する。未指定時のデフォルトは slog.LevelError。
+// WithLogLevel sets the log level. Default when unspecified is slog.LevelError.
 func WithLogLevel(level slog.Level) Option {
 	return func(c *config) {
 		c.logLevel = level
@@ -162,7 +162,7 @@ func StreamInterceptor(verifierEndpoint endpoint.VerifierEndpoint, opts ...Optio
 	}
 }
 
-// Interceptor 認可チェックを行うインターセプター
+// Interceptor returns a gRPC UnaryServerInterceptor that performs authorization checks.
 func Interceptor(verifierEndpoint endpoint.VerifierEndpoint, opts ...Option) grpc.UnaryServerInterceptor {
 	if verifierEndpoint == nil {
 		panic("verifierEndpoint must not be nil")
@@ -183,18 +183,18 @@ func Interceptor(verifierEndpoint endpoint.VerifierEndpoint, opts ...Option) grp
 
 		log.Debug("processing method", "method", info.FullMethod, "x-request-id", requestID)
 
-		// protobuf_policy_option.Interceptor が実行済みかチェック
-		// 未登録の場合はチェーン設定ミスとして Internal エラーを返す
+		// Check whether protobuf_policy_option.Interceptor has run.
+		// If not registered, treat it as an interceptor chain misconfiguration and return an Internal error.
 		if !policy.InterceptorRanFromContext(ctx) {
 			log.Error("interceptor chain misconfiguration: protobuf_policy_option.Interceptor is not registered")
 			return nil, status.Error(codes.Internal,
 				"protobuf_policy_option.Interceptor is not registered in the interceptor chain")
 		}
 
-		// contextから解決済みポリシーメタデータを取得
+		// Get the resolved policy metadata from context.
 		policyData, ok := policy.PolicyFromContext(ctx)
 		if !ok {
-			// Interceptor は実行済みだが、このメソッドにポリシー定義がない（認可不要）
+			// Interceptor has already run, but no policy is defined for this method (no authorization required).
 			return handler(ctx, req)
 		}
 
@@ -203,7 +203,7 @@ func Interceptor(verifierEndpoint endpoint.VerifierEndpoint, opts ...Option) grp
 
 		log.Debug("verifying authorization", "resource", resource, "action", action)
 
-		// 認可チェック実行（エンドポイントは status エラーを返す設計）
+		// Execute authorization check (the endpoint is designed to return a status error).
 		if err := verifierEndpoint.Verify(ctx, resource, action); err != nil {
 			log.Error("authorization check failed", "resource", resource, "action", action, "error", err)
 			return nil, err

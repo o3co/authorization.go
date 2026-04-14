@@ -53,13 +53,13 @@ func withPolicy(ctx context.Context, resource, action string) context.Context {
 	})
 }
 
-// markInterceptorRan Interceptor が実行されたことを ctx に記録する（内部用）
+// markInterceptorRan records in ctx that the Interceptor has run (internal use).
 func markInterceptorRan(ctx context.Context) context.Context {
 	return context.WithValue(ctx, ctxKeyInterceptorRan, true)
 }
 
-// InterceptorRanFromContext protobuf_policy_option.Interceptor が実行済みかどうかを返す。
-// policy_verification.Interceptor でチェーンの設定ミスを検出するために使用する。
+// InterceptorRanFromContext returns whether protobuf_policy_option.Interceptor has already run.
+// Used by policy_verification.Interceptor to detect interceptor chain misconfiguration.
 func InterceptorRanFromContext(ctx context.Context) bool {
 	return ctx.Value(ctxKeyInterceptorRan) != nil
 }
@@ -76,28 +76,28 @@ func PolicyFromContext(ctx context.Context) (*Policy, bool) {
 	return pm, ok
 }
 
-// config はインターセプターの設定
+// config holds interceptor configuration.
 type config struct {
 	logLevel slog.Level
 }
 
-// Option はインターセプターの設定オプション
+// Option configures the interceptor.
 type Option func(*config)
 
-// WithLogLevel ログレベルを指定する。未指定時のデフォルトは slog.LevelError。
+// WithLogLevel sets the log level. Default when unspecified is slog.LevelError.
 func WithLogLevel(level slog.Level) Option {
 	return func(c *config) {
 		c.logLevel = level
 	}
 }
 
-// rpcMethod は gRPC のフルメソッド名を分解した構造体
+// rpcMethod holds the decomposed parts of a gRPC full method name.
 type rpcMethod struct {
 	Service string
 	Method  string
 }
 
-// Interceptor protobufオプションとリクエストからリソースを解決
+// Interceptor resolves resources from protobuf options and the request.
 func Interceptor(opts ...Option) grpc.UnaryServerInterceptor {
 	cfg := &config{logLevel: slog.LevelError}
 	for _, opt := range opts {
@@ -105,12 +105,12 @@ func Interceptor(opts ...Option) grpc.UnaryServerInterceptor {
 	}
 	log := newLogger(cfg.logLevel)
 
-	var cache sync.Map // インターセプターインスタンスごとのキャッシュ（テスト間の汚染を防ぐ）
+	var cache sync.Map // per-interceptor-instance cache (prevents contamination between tests)
 
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		log.Debug("processing method", "method", info.FullMethod)
 
-		// protobufからpermissionを取得
+		// Retrieve permissions from protobuf.
 		policy, err := getMethodPolicy(&cache, log, info.FullMethod)
 
 		if err != nil {
@@ -118,20 +118,20 @@ func Interceptor(opts ...Option) grpc.UnaryServerInterceptor {
 			return nil, status.Errorf(codes.Internal, "failed to get method policy: %v", err)
 		}
 
-		// Interceptor が実行されたことを常にマーク（policy_verification 側でチェーン設定ミスを検出するため）
+		// Always mark the interceptor as ran (so policy_verification can detect chain misconfiguration).
 		ctx = markInterceptorRan(ctx)
 
 		if policy == nil {
-			// 権限定義なし、継続
+			// No permission defined; continue to next handler.
 			return handler(ctx, req)
 		}
 
 		log.Debug("policy resolved", "resource", policy.Resource, "action", policy.Action)
 
-		// リソース解決処理
+		// Resolve resource from the request.
 		resolvedResource, err := resolveResourceFromRequest(log, policy, req)
 
-		// リソース解決に失敗した場合はInternalServerError
+		// If resource resolution fails, return InternalServerError.
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "resource resolved failed: %v", err)
 		}
@@ -142,49 +142,49 @@ func Interceptor(opts ...Option) grpc.UnaryServerInterceptor {
 	}
 }
 
-// フルメソッド名からサービスとメソッドを分解して取得する関数
+// parseFullMethodName parses a gRPC full method name into its service and method components.
 func parseFullMethodName(fullMethodName string) (rpcMethod, error) {
-	// fullMethodName は gRPC のフルメソッド名で、
-	// 形式は "/<package>.<Service>/<Method>" です。
-	// 例: "/sample.v1.SampleService/SearchSamples"
+	// fullMethodName is a gRPC full method name in the format
+	// "/<package>.<Service>/<Method>".
+	// Example: "/sample.v1.SampleService/SearchSamples"
 
-	// 空文字または先頭が '/' でない場合は形式が不正
+	// Empty string or missing leading '/' is an invalid format.
 	if len(fullMethodName) == 0 || fullMethodName[0] != '/' {
 		return rpcMethod{}, fmt.Errorf("invalid full method format: %s", fullMethodName)
 	}
 
-	// 先頭の '/' を除去して実際の文字列部分を取り出す
-	// 例: "sample.v1.SampleService/SearchSamples"
+	// Strip the leading '/' to get the actual string portion.
+	// Example: "sample.v1.SampleService/SearchSamples"
 	method := fullMethodName[1:]
 
-	// 最後の '/' を探し、サービス名とメソッド名を分割する
-	// パッケージやサービス名に '/' は含まれない前提のため、最後の '/' を使う
+	// Find the last '/' to split the service name from the method name.
+	// Packages and service names cannot contain '/', so we use the last '/'.
 	lastSlash := strings.LastIndex(method, "/")
 	if lastSlash == -1 {
 		return rpcMethod{}, fmt.Errorf("invalid full method format: %s", fullMethodName)
 	}
 
-	// 最後の '/' の 左側がサービス名、右側がメソッド名
+	// Everything to the left of the last '/' is the service name; everything to the right is the method name.
 	// serviceName: "sample.v1.SampleService"
 	// methodName:  "SearchSamples"
 	serviceName := method[:lastSlash]
 	methodName := method[lastSlash+1:]
 
-	// 分割した値を構造体で返す
+	// Return the parsed values as a struct.
 	return rpcMethod{Service: serviceName, Method: methodName}, nil
 }
 
-// cachedPolicy は methodPolicyCache に格納するラッパー。
-// policy == nil は「ポリシーなし」を意味し、キャッシュ未登録と区別する。
-// err を持たせることでエラー結果もキャッシュし、再スキャンを防ぐ。
+// cachedPolicy is a wrapper stored in the method policy cache.
+// policy == nil means "no policy" and is distinguished from a cache miss.
+// Holding err allows error results to be cached, preventing repeated scans.
 type cachedPolicy struct {
 	policy *pb.Policy
 	err    error
 }
 
-// getMethodPolicy protobufメソッドから権限情報を取得
+// getMethodPolicy retrieves permission information from a protobuf method.
 func getMethodPolicy(cache *sync.Map, log *slog.Logger, fullMethodName string) (*pb.Policy, error) {
-	// キャッシュヒット確認（2回目以降はスキャン不要）
+	// Check cache (no scan needed from second call onwards).
 	if v, ok := cache.Load(fullMethodName); ok {
 		c := v.(*cachedPolicy)
 		return c.policy, c.err
@@ -192,13 +192,13 @@ func getMethodPolicy(cache *sync.Map, log *slog.Logger, fullMethodName string) (
 
 	policy, err := lookupMethodPolicy(log, fullMethodName)
 
-	// エラーも含めてキャッシュに登録（再スキャン防止）
+	// Store in cache including errors (prevents repeated scans).
 	cache.Store(fullMethodName, &cachedPolicy{policy: policy, err: err})
 	return policy, err
 }
 
-// lookupMethodPolicy GlobalFiles をスキャンしてポリシーを解決する。
-// getMethodPolicy から初回のみ呼ばれる。
+// lookupMethodPolicy scans GlobalFiles to resolve the policy.
+// Called by getMethodPolicy on the first lookup only.
 func lookupMethodPolicy(log *slog.Logger, fullMethodName string) (*pb.Policy, error) {
 	mm, err := parseFullMethodName(fullMethodName)
 	if err != nil {
@@ -213,10 +213,10 @@ func lookupMethodPolicy(log *slog.Logger, fullMethodName string) (*pb.Policy, er
 			svc := services.Get(i)
 			if string(svc.FullName()) == serviceName {
 				serviceDesc = svc
-				return false // 発見したので停止
+				return false // found; stop scanning
 			}
 		}
-		return true // 次のファイルへ
+		return true // continue to next file
 	})
 
 	if serviceDesc == nil {
@@ -249,7 +249,7 @@ func lookupMethodPolicy(log *slog.Logger, fullMethodName string) (*pb.Policy, er
 	return nil, nil
 }
 
-// resolveResourceFromRequest リソースを解決 (policy とリクエストからプレースホルダを置換)
+// resolveResourceFromRequest resolves the resource by replacing placeholders using the policy and request.
 func resolveResourceFromRequest(log *slog.Logger, policy *pb.Policy, req interface{}) (*Policy, error) {
 	if policy.Resource == "" {
 		return nil, fmt.Errorf("policy resource must not be empty")
@@ -262,16 +262,16 @@ func resolveResourceFromRequest(log *slog.Logger, policy *pb.Policy, req interfa
 
 	log.Debug("resolving resource template", "template", resource)
 
-	// resource_fieldsでテンプレート置換
+	// Template substitution via resource_fields.
 	for _, field := range policy.FieldMappings {
 		if field.Placeholder == "" || field.RequestField == "" {
 			return nil, fmt.Errorf("invalid field mapping: placeholder and request_field must not be empty")
 		}
 
-		// プレースホルダーの形式は "<field_name>" とする
+		// Placeholder format is "<field_name>".
 		placeholder := fmt.Sprintf("<%s>", field.Placeholder)
 
-		//リソーステンプレートに該当するプレースホルダーが含まれているかチェック
+		// Check whether the resource template contains the relevant placeholder.
 		if strings.Contains(resource, placeholder) {
 			value, err := extractFieldFromRequest(log, req, field.RequestField)
 
@@ -358,14 +358,14 @@ type contextServerStream struct {
 
 func (s *contextServerStream) Context() context.Context { return s.ctx }
 
-// extractFieldFromRequest リクエストからフィールド値を抽出（リフレクション使用）
+// extractFieldFromRequest extracts a field value from the request using reflection.
 func extractFieldFromRequest(log *slog.Logger, req interface{}, fieldPath string) (string, error) {
 	log.Debug("extracting field from request", "field", fieldPath, "type", fmt.Sprintf("%T", req))
 
-	// まずprotobufの反射APIで安全に取得を試みる（生成されたメッセージで確実に動作）
+	// First, attempt a safe retrieval via the protobuf reflection API (reliable for generated messages).
 	if pm, ok := req.(proto.Message); ok {
 		m := pm.ProtoReflect()
-		// proto側のフィールド名で検索（例: "id"）
+		// Search by the proto-side field name (e.g., "id").
 		fd := m.Descriptor().Fields().ByName(protoreflect.Name(fieldPath))
 
 		if fd == nil {
@@ -374,7 +374,7 @@ func extractFieldFromRequest(log *slog.Logger, req interface{}, fieldPath string
 
 		val := m.Get(fd)
 
-		// list/mapは未対応
+		// list/map fields are not supported.
 		if fd.IsList() || fd.IsMap() {
 			log.Error("unsupported field type: list/map not supported", "field", fieldPath)
 			return "", fmt.Errorf("field %s is list/map, unsupported", fieldPath)
@@ -385,11 +385,11 @@ func extractFieldFromRequest(log *slog.Logger, req interface{}, fieldPath string
 			return val.String(), nil
 		case protoreflect.BytesKind:
 			b := val.Bytes()
-			// UTF-8 の場合はそのまま文字列で返す
+			// If valid UTF-8, return as a string directly.
 			if utf8.Valid(b) {
 				return string(b), nil
 			}
-			// バイナリの場合は hex エンコードして返す
+			// For binary data, return hex-encoded.
 			return hex.EncodeToString(b), nil
 		case protoreflect.Int32Kind, protoreflect.Sint32Kind, protoreflect.Sfixed32Kind,
 			protoreflect.Int64Kind, protoreflect.Sint64Kind, protoreflect.Sfixed64Kind:

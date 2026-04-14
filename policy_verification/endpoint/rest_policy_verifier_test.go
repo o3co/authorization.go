@@ -30,7 +30,7 @@ import (
 
 // --- NewRESTEndpoint ---
 
-// 空文字を渡した場合はエラーを返すことを確認する。
+// Verify that passing an empty string returns an error.
 func TestNewRESTEndpoint_EmptyURL_ReturnsError(t *testing.T) {
 	_, err := NewRESTEndpoint("")
 	if err == nil {
@@ -38,7 +38,7 @@ func TestNewRESTEndpoint_EmptyURL_ReturnsError(t *testing.T) {
 	}
 }
 
-// スペースのみの文字列を渡した場合はエラーを返すことを確認する（TrimSpace 後に空になる）。
+// Verify that passing a whitespace-only string returns an error (becomes empty after TrimSpace).
 func TestNewRESTEndpoint_WhitespaceOnlyURL_ReturnsError(t *testing.T) {
 	_, err := NewRESTEndpoint("   ")
 	if err == nil {
@@ -46,7 +46,7 @@ func TestNewRESTEndpoint_WhitespaceOnlyURL_ReturnsError(t *testing.T) {
 	}
 }
 
-// 正常な URL を渡した場合に "/verify" が末尾に付加されることを確認する。
+// Verify that "/verify" is appended when a valid URL is provided.
 func TestNewRESTEndpoint_ValidURL_AppendsVerifyPath(t *testing.T) {
 	ep, err := NewRESTEndpoint("http://localhost:8080")
 	if err != nil {
@@ -58,7 +58,7 @@ func TestNewRESTEndpoint_ValidURL_AppendsVerifyPath(t *testing.T) {
 	}
 }
 
-// 末尾に "/" がある URL でも "/verify" が正しく付加されることを確認する（二重スラッシュにならない）。
+// Verify that "/verify" is appended correctly even when the URL has a trailing "/" (no double slash).
 func TestNewRESTEndpoint_TrailingSlash_NormalizedCorrectly(t *testing.T) {
 	ep, err := NewRESTEndpoint("http://localhost:8080/")
 	if err != nil {
@@ -70,7 +70,7 @@ func TestNewRESTEndpoint_TrailingSlash_NormalizedCorrectly(t *testing.T) {
 	}
 }
 
-// ベースパスが含まれる URL の末尾に "/verify" が付加されることを確認する。
+// Verify that "/verify" is appended to a URL that includes a base path.
 func TestNewRESTEndpoint_WithBasePath_AppendsVerify(t *testing.T) {
 	ep, err := NewRESTEndpoint("http://localhost:8080/api/v1")
 	if err != nil {
@@ -82,7 +82,7 @@ func TestNewRESTEndpoint_WithBasePath_AppendsVerify(t *testing.T) {
 	}
 }
 
-// スキームなしの URL は自動的に "http://" を補完することを確認する。
+// Verify that a URL without a scheme is automatically prefixed with "http://".
 func TestNewRESTEndpoint_NoScheme_DefaultsToHTTP(t *testing.T) {
 	ep, err := NewRESTEndpoint("localhost:8080")
 	if err != nil {
@@ -96,7 +96,7 @@ func TestNewRESTEndpoint_NoScheme_DefaultsToHTTP(t *testing.T) {
 
 // --- WithTimeout ---
 
-// ゼロのタイムアウトは不正な設定として panic することを確認する。
+// Verify that a zero timeout panics as an invalid configuration.
 func TestWithTimeout_Zero_Panics(t *testing.T) {
 	defer func() {
 		if r := recover(); r == nil {
@@ -106,7 +106,7 @@ func TestWithTimeout_Zero_Panics(t *testing.T) {
 	WithTimeout(0)
 }
 
-// 負のタイムアウトは不正な設定として panic することを確認する。
+// Verify that a negative timeout panics as an invalid configuration.
 func TestWithTimeout_Negative_Panics(t *testing.T) {
 	defer func() {
 		if r := recover(); r == nil {
@@ -116,7 +116,7 @@ func TestWithTimeout_Negative_Panics(t *testing.T) {
 	WithTimeout(-1 * time.Second)
 }
 
-// 正常なタイムアウト値が HTTP クライアントに設定されることを確認する。
+// Verify that a valid timeout value is set on the HTTP client.
 func TestWithTimeout_Valid_SetsClientTimeout(t *testing.T) {
 	ep, err := NewRESTEndpoint("http://localhost", WithTimeout(5*time.Second))
 	if err != nil {
@@ -130,7 +130,7 @@ func TestWithTimeout_Valid_SetsClientTimeout(t *testing.T) {
 
 // --- WithMaxResponseBodySize ---
 
-// ゼロのボディサイズ上限は不正な設定として panic することを確認する。
+// Verify that a zero body size limit panics as an invalid configuration.
 func TestWithMaxResponseBodySize_Zero_Panics(t *testing.T) {
 	defer func() {
 		if r := recover(); r == nil {
@@ -140,7 +140,7 @@ func TestWithMaxResponseBodySize_Zero_Panics(t *testing.T) {
 	WithMaxResponseBodySize(0)
 }
 
-// 負のボディサイズ上限は不正な設定として panic することを確認する。
+// Verify that a negative body size limit panics as an invalid configuration.
 func TestWithMaxResponseBodySize_Negative_Panics(t *testing.T) {
 	defer func() {
 		if r := recover(); r == nil {
@@ -150,7 +150,7 @@ func TestWithMaxResponseBodySize_Negative_Panics(t *testing.T) {
 	WithMaxResponseBodySize(-1)
 }
 
-// 正常なボディサイズ上限がフィールドに設定されることを確認する。
+// Verify that a valid body size limit is stored in the field.
 func TestWithMaxResponseBodySize_Valid_SetsField(t *testing.T) {
 	ep, err := NewRESTEndpoint("http://localhost", WithMaxResponseBodySize(512))
 	if err != nil {
@@ -164,7 +164,7 @@ func TestWithMaxResponseBodySize_Valid_SetsField(t *testing.T) {
 
 // --- getToken ---
 
-// gRPC incoming metadata がない context からはトークンを取得できずエラーになることを確認する。
+// Verify that a token cannot be retrieved from a context with no gRPC incoming metadata, returning an error.
 func TestGetToken_NoMetadata_ReturnsError(t *testing.T) {
 	ctx := context.Background()
 	_, err := getToken(ctx)
@@ -173,7 +173,7 @@ func TestGetToken_NoMetadata_ReturnsError(t *testing.T) {
 	}
 }
 
-// authorization ヘッダーが存在しない場合はエラーになることを確認する。
+// Verify that an error is returned when the authorization header is absent.
 func TestGetToken_NoAuthorizationHeader_ReturnsError(t *testing.T) {
 	md := metadata.Pairs("other-header", "value")
 	ctx := metadata.NewIncomingContext(context.Background(), md)
@@ -183,7 +183,7 @@ func TestGetToken_NoAuthorizationHeader_ReturnsError(t *testing.T) {
 	}
 }
 
-// "Bearer <token>" 形式ではなく単語が1つだけの値はフォーマット不正としてエラーになることを確認する。
+// Verify that a single-word value (not in "Bearer <token>" format) returns an error as an invalid format.
 func TestGetToken_SingleWordValue_ReturnsError(t *testing.T) {
 	md := metadata.Pairs("authorization", "onlyone")
 	ctx := metadata.NewIncomingContext(context.Background(), md)
@@ -193,7 +193,7 @@ func TestGetToken_SingleWordValue_ReturnsError(t *testing.T) {
 	}
 }
 
-// "Bearer <token>" 形式の値から TokenType と Value が正しく分解されることを確認する。
+// Verify that TokenType and Value are correctly parsed from a "Bearer <token>" value.
 func TestGetToken_BearerToken_ReturnsCorrectFields(t *testing.T) {
 	md := metadata.Pairs("authorization", "Bearer my-token-value")
 	ctx := metadata.NewIncomingContext(context.Background(), md)
@@ -209,7 +209,7 @@ func TestGetToken_BearerToken_ReturnsCorrectFields(t *testing.T) {
 	}
 }
 
-// --- Verify (httptest を使った結合テスト) ---
+// --- Verify (integration tests using httptest) ---
 
 func newTestEndpoint(t *testing.T, serverURL string) VerifierEndpoint {
 	t.Helper()
@@ -225,7 +225,7 @@ func ctxWithBearerToken(token string) context.Context {
 	return metadata.NewIncomingContext(context.Background(), md)
 }
 
-// 認可サービスが 200 を返した場合は nil を返すことを確認する。
+// Verify that nil is returned when the authorization service responds with 200.
 func TestVerify_200_ReturnsNil(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -238,7 +238,7 @@ func TestVerify_200_ReturnsNil(t *testing.T) {
 	}
 }
 
-// 認可サービスが 403 を返した場合は codes.PermissionDenied を返すことを確認する。
+// Verify that codes.PermissionDenied is returned when the authorization service responds with 403.
 func TestVerify_403_ReturnsPermissionDenied(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
@@ -250,7 +250,7 @@ func TestVerify_403_ReturnsPermissionDenied(t *testing.T) {
 	assertGRPCCode(t, err, codes.PermissionDenied)
 }
 
-// 認可サービスが 401 を返した場合は codes.Unauthenticated を返すことを確認する。
+// Verify that codes.Unauthenticated is returned when the authorization service responds with 401.
 func TestVerify_401_ReturnsUnauthenticated(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
@@ -262,7 +262,7 @@ func TestVerify_401_ReturnsUnauthenticated(t *testing.T) {
 	assertGRPCCode(t, err, codes.Unauthenticated)
 }
 
-// 認可サービスが 500 を返した場合は codes.Internal を返すことを確認する。
+// Verify that codes.Internal is returned when the authorization service responds with 500.
 func TestVerify_500_ReturnsInternal(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -274,8 +274,8 @@ func TestVerify_500_ReturnsInternal(t *testing.T) {
 	assertGRPCCode(t, err, codes.Internal)
 }
 
-// gRPC metadata にトークンがない場合はサーバーに HTTP リクエストを送る前に
-// codes.Unauthenticated を返すことを確認する。
+// Verify that when no token is present in gRPC metadata,
+// codes.Unauthenticated is returned before sending an HTTP request to the server.
 func TestVerify_NoToken_ReturnsUnauthenticatedWithoutCallingServer(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Error("server should not be called when no token is present")
@@ -288,8 +288,8 @@ func TestVerify_NoToken_ReturnsUnauthenticatedWithoutCallingServer(t *testing.T)
 	assertGRPCCode(t, err, codes.Unauthenticated)
 }
 
-// Authorization / x-request-id / Content-Type ヘッダーが
-// 認可サービスへのリクエストに正しく設定されることを確認する。
+// Verify that Authorization, x-request-id, and Content-Type headers
+// are correctly set on the request to the authorization service.
 func TestVerify_RequestHeaders_SetCorrectly(t *testing.T) {
 	var capturedAuth, capturedRequestID, capturedContentType string
 
@@ -326,8 +326,8 @@ func TestVerify_RequestHeaders_SetCorrectly(t *testing.T) {
 	}
 }
 
-// x-request-id がない場合は認可サービスへのリクエストに x-request-id ヘッダーを
-// 付加しないことを確認する（存在しないヘッダーを転送しない）。
+// Verify that when x-request-id is absent, the x-request-id header is not added
+// to the request to the authorization service (do not forward a header that does not exist).
 func TestVerify_NoRequestID_HeaderNotForwarded(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if v := r.Header.Get("x-request-id"); v != "" {
@@ -343,11 +343,11 @@ func TestVerify_NoRequestID_HeaderNotForwarded(t *testing.T) {
 	}
 }
 
-// 呼び出し元の context がタイムアウトした場合は codes.Internal を返すことを確認する。
+// Verify that codes.Internal is returned when the caller's context times out.
 func TestVerify_ContextTimeout_ReturnsInternal(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// クライアントタイムアウト (50ms) より長く待機し、
-		// r.Context() キャンセルまたはフォールバックタイマーで抜ける
+		// Wait longer than the client timeout (50ms),
+		// then exit via r.Context() cancellation or fallback timer.
 		select {
 		case <-r.Context().Done():
 		case <-time.After(500 * time.Millisecond):
@@ -366,7 +366,7 @@ func TestVerify_ContextTimeout_ReturnsInternal(t *testing.T) {
 	assertGRPCCode(t, err, codes.Internal)
 }
 
-// 認可サービスへのリクエストボディに resource と action が JSON で含まれることを確認する。
+// Verify that the request body to the authorization service contains resource and action as JSON.
 func TestVerify_RequestBody_ContainsResourceAndAction(t *testing.T) {
 	var body map[string]string
 
@@ -390,7 +390,7 @@ func TestVerify_RequestBody_ContainsResourceAndAction(t *testing.T) {
 	}
 }
 
-// Accept ヘッダーが "application/json" に設定されることを確認する。
+// Verify that the Accept header is set to "application/json".
 func TestVerify_RequestHeader_AcceptIsJSON(t *testing.T) {
 	var capturedAccept string
 
@@ -410,7 +410,7 @@ func TestVerify_RequestHeader_AcceptIsJSON(t *testing.T) {
 	}
 }
 
-// 200 以外の 2xx ステータス（201, 204）でも認可成功として nil を返すことを確認する。
+// Verify that nil is returned for non-200 2xx statuses (201, 204) as authorization success.
 func TestVerify_2xx_ReturnsNil(t *testing.T) {
 	for _, statusCode := range []int{201, 204} {
 		statusCode := statusCode
@@ -428,8 +428,8 @@ func TestVerify_2xx_ReturnsNil(t *testing.T) {
 	}
 }
 
-// 401/403 以外の 4xx ステータス（400, 404, 422）は認可サービス側の予期しないエラーとして
-// codes.Internal を返すことを確認する。
+// Verify that non-auth-related 4xx statuses (400, 404, 422) return codes.Internal
+// as an unexpected error from the authorization service.
 func TestVerify_4xx_NotAuthRelated_ReturnsInternal(t *testing.T) {
 	for _, statusCode := range []int{400, 404, 422} {
 		statusCode := statusCode
@@ -526,7 +526,7 @@ func TestVerify_WithRequestIDFunc(t *testing.T) {
 	}
 }
 
-// assertGRPCCode は err が gRPC ステータスエラーであり、期待するコードを持つことを検証する
+// assertGRPCCode verifies that err is a gRPC status error with the expected code.
 func assertGRPCCode(t *testing.T, err error, wantCode codes.Code) {
 	t.Helper()
 	if err == nil {

@@ -29,7 +29,7 @@ import (
 	"github.com/o3co/grpc.authz/policy_verification/endpointtest"
 )
 
-// chainInterceptors は interceptor チェーンを構築してハンドラーを呼び出すヘルパー
+// chainInterceptors is a helper that builds an interceptor chain and invokes the handler.
 func chainInterceptors(ctx context.Context, req interface{}, fullMethod string, handler grpc.UnaryHandler, interceptors ...grpc.UnaryServerInterceptor) (interface{}, error) {
 	info := &grpc.UnaryServerInfo{FullMethod: fullMethod}
 	h := handler
@@ -45,7 +45,7 @@ func chainInterceptors(ctx context.Context, req interface{}, fullMethod string, 
 
 // --- generateRequestID ---
 
-// 生成された ID が "YYYYMMDDHHmmss_<hex>" のフォーマットに準拠していることを確認する。
+// Verify that the generated ID conforms to the "YYYYMMDDHHmmss_<hex>" format.
 func TestGenerateRequestID_Format(t *testing.T) {
 	id := generateRequestID()
 	pattern := regexp.MustCompile(`^\d{14}_[0-9a-f]+$`)
@@ -54,7 +54,7 @@ func TestGenerateRequestID_Format(t *testing.T) {
 	}
 }
 
-// 連続して生成した 100件の ID がすべて異なることを確認する。
+// Verify that 100 consecutively generated IDs are all unique.
 func TestGenerateRequestID_Uniqueness(t *testing.T) {
 	seen := make(map[string]struct{})
 	for range 100 {
@@ -68,7 +68,7 @@ func TestGenerateRequestID_Uniqueness(t *testing.T) {
 
 // --- extractOrGenerateRequestID ---
 
-// gRPC incoming metadata に x-request-id が存在する場合はその値をそのまま返すことを確認する。
+// Verify that when x-request-id exists in gRPC incoming metadata, its value is returned as-is.
 func TestExtractOrGenerateRequestID_UsesExistingID(t *testing.T) {
 	md := metadata.Pairs("x-request-id", "existing-id-123")
 	ctx := metadata.NewIncomingContext(context.Background(), md)
@@ -79,7 +79,7 @@ func TestExtractOrGenerateRequestID_UsesExistingID(t *testing.T) {
 	}
 }
 
-// metadata が存在しない場合は新しい ID を生成することを確認する。
+// Verify that a new ID is generated when no metadata is present.
 func TestExtractOrGenerateRequestID_GeneratesWhenNoMetadata(t *testing.T) {
 	ctx := context.Background()
 	got := extractOrGenerateRequestID(ctx)
@@ -88,7 +88,7 @@ func TestExtractOrGenerateRequestID_GeneratesWhenNoMetadata(t *testing.T) {
 	}
 }
 
-// x-request-id が空文字の場合は既存値とみなさず新しい ID を生成することを確認する。
+// Verify that when x-request-id is an empty string it is not treated as an existing value and a new ID is generated.
 func TestExtractOrGenerateRequestID_GeneratesWhenIDIsEmpty(t *testing.T) {
 	md := metadata.Pairs("x-request-id", "")
 	ctx := metadata.NewIncomingContext(context.Background(), md)
@@ -101,7 +101,7 @@ func TestExtractOrGenerateRequestID_GeneratesWhenIDIsEmpty(t *testing.T) {
 
 // --- Interceptor ---
 
-// verifierEndpoint に nil を渡した場合は設定ミスとして panic することを確認する。
+// Verify that passing nil as verifierEndpoint panics as a misconfiguration.
 func TestInterceptor_NilEndpoint_Panics(t *testing.T) {
 	defer func() {
 		if r := recover(); r == nil {
@@ -111,8 +111,8 @@ func TestInterceptor_NilEndpoint_Panics(t *testing.T) {
 	Interceptor(nil)
 }
 
-// protobuf_policy_option.Interceptor を経由せずに呼ばれた場合は
-// インターセプターチェーンの設定ミスとして Internal エラーを返すことを確認する。
+// Verify that when called without going through protobuf_policy_option.Interceptor,
+// an Internal error is returned as an interceptor chain misconfiguration.
 func TestInterceptor_PolicyOptionInterceptorNotRan_ReturnsInternal(t *testing.T) {
 	ep := endpointtest.Func(func(ctx context.Context, resource, action string) error {
 		t.Error("Verify should not be called")
@@ -141,8 +141,8 @@ func TestInterceptor_PolicyOptionInterceptorNotRan_ReturnsInternal(t *testing.T)
 	}
 }
 
-// ポリシー定義がないメソッド（proto レジストリ未登録）の場合は
-// Verify を呼ばず handler をそのまま呼び出すことを確認する。
+// Verify that for a method with no policy definition (not registered in the proto registry),
+// Verify is not called and the handler is invoked directly.
 func TestInterceptor_NoPolicy_CallsHandler(t *testing.T) {
 	ep := endpointtest.Func(func(ctx context.Context, resource, action string) error {
 		t.Error("Verify should not be called when method has no policy")
@@ -156,7 +156,7 @@ func TestInterceptor_NoPolicy_CallsHandler(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	// unregistered method → policyoption.Interceptor はポリシーなしで handler を呼ぶ
+	// unregistered method → policyoption.Interceptor calls handler with no policy
 	resp, err := chainInterceptors(
 		ctx, nil, "/unknown.Service/UnknownMethod", handler,
 		policyoption.Interceptor(),
@@ -174,8 +174,8 @@ func TestInterceptor_NoPolicy_CallsHandler(t *testing.T) {
 	}
 }
 
-// metadata の x-request-id がインターセプター内で context に書き込まれ、
-// handler に渡される context から取得できることを確認する。
+// Verify that the x-request-id from metadata is written to the context inside the interceptor
+// and can be retrieved from the context passed to the handler.
 func TestInterceptor_RequestID_PropagatedToContext(t *testing.T) {
 	ep := endpointtest.Allow()
 
@@ -205,8 +205,8 @@ func TestInterceptor_RequestID_PropagatedToContext(t *testing.T) {
 	}
 }
 
-// metadata に x-request-id がない場合でも、自動生成した ID が
-// handler に渡される context に書き込まれることを確認する。
+// Verify that even when x-request-id is absent from metadata,
+// the auto-generated ID is written to the context passed to the handler.
 func TestInterceptor_RequestID_GeneratedWhenAbsent(t *testing.T) {
 	ep := endpointtest.Allow()
 
@@ -216,7 +216,7 @@ func TestInterceptor_RequestID_GeneratedWhenAbsent(t *testing.T) {
 		return nil, nil
 	}
 
-	ctx := context.Background() // metadata なし
+	ctx := context.Background() // no metadata
 
 	_, err := chainInterceptors(
 		ctx, nil, "/unknown.Service/UnknownMethod", handler,

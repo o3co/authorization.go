@@ -27,7 +27,7 @@ import (
 
 // --- parseFullMethodName ---
 
-// gRPC フルメソッド名（/pkg.Service/Method 形式）を Service と Method に分解できることを確認する。
+// Verify that a gRPC full method name (in /pkg.Service/Method format) can be decomposed into Service and Method.
 func TestParseFullMethodName(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -37,39 +37,39 @@ func TestParseFullMethodName(t *testing.T) {
 		wantErr     bool
 	}{
 		{
-			// パッケージ付きの正規フォーマット
+			// canonical format with package prefix
 			name:        "valid full path",
 			input:       "/sample.v1.SampleService/SearchSamples",
 			wantService: "sample.v1.SampleService",
 			wantMethod:  "SearchSamples",
 		},
 		{
-			// パッケージなし（サービス名のみ）でも動作する
+			// works even without a package prefix (service name only)
 			name:        "simple service without package",
 			input:       "/MyService/MyMethod",
 			wantService: "MyService",
 			wantMethod:  "MyMethod",
 		},
 		{
-			// 空文字列はエラー
+			// empty string is an error
 			name:    "empty string",
 			input:   "",
 			wantErr: true,
 		},
 		{
-			// 先頭の "/" がない場合はエラー
+			// missing leading "/" is an error
 			name:    "no leading slash",
 			input:   "MyService/MyMethod",
 			wantErr: true,
 		},
 		{
-			// "/" のみでメソッド区切りなしはエラー
+			// only "/" with no method separator is an error
 			name:    "only slash",
 			input:   "/",
 			wantErr: true,
 		},
 		{
-			// メソッド名区切り（2つ目の "/"）がない場合はエラー
+			// missing method name separator (second "/") is an error
 			name:    "no method name separator",
 			input:   "/MyService",
 			wantErr: true,
@@ -100,14 +100,14 @@ func TestParseFullMethodName(t *testing.T) {
 
 // --- extractFieldFromRequest ---
 
-// proto.Message のフィールドをリフレクションで取得し文字列に変換できることを確認する。
-// サポートする型（string, int32, bool）と非サポート型（list, enum）、
-// および proto.Message 以外の型や存在しないフィールドのエラーを検証する。
+// Verify that proto.Message fields can be retrieved via reflection and converted to strings.
+// Tests supported types (string, int32, bool), unsupported types (list, enum),
+// and errors for non-proto.Message types and non-existent fields.
 func TestExtractFieldFromRequest(t *testing.T) {
 	log := newLogger(slog.LevelError)
 
 	t.Run("string field", func(t *testing.T) {
-		// string フィールドはそのまま返る
+		// string field is returned as-is
 		req := &pb.Policy{Resource: "posts/123"}
 		got, err := extractFieldFromRequest(log, req, "resource")
 		if err != nil {
@@ -119,7 +119,7 @@ func TestExtractFieldFromRequest(t *testing.T) {
 	})
 
 	t.Run("empty string field", func(t *testing.T) {
-		// ゼロ値の string フィールドは空文字を返す（エラーにならない）
+		// zero-value string field returns empty string (not an error)
 		req := &pb.Policy{Resource: ""}
 		got, err := extractFieldFromRequest(log, req, "resource")
 		if err != nil {
@@ -131,7 +131,7 @@ func TestExtractFieldFromRequest(t *testing.T) {
 	})
 
 	t.Run("int32 field", func(t *testing.T) {
-		// int32 フィールドは十進数文字列に変換される
+		// int32 field is converted to a decimal string
 		num := int32(42)
 		req := &descriptorpb.FieldDescriptorProto{Number: &num}
 		got, err := extractFieldFromRequest(log, req, "number")
@@ -144,7 +144,7 @@ func TestExtractFieldFromRequest(t *testing.T) {
 	})
 
 	t.Run("bool field", func(t *testing.T) {
-		// bool フィールドは "true"/"false" 文字列に変換される
+		// bool field is converted to "true"/"false" string
 		b := true
 		req := &descriptorpb.FieldDescriptorProto{Proto3Optional: &b}
 		got, err := extractFieldFromRequest(log, req, "proto3_optional")
@@ -157,7 +157,7 @@ func TestExtractFieldFromRequest(t *testing.T) {
 	})
 
 	t.Run("list field is unsupported", func(t *testing.T) {
-		// repeated フィールドはリソーステンプレートへの埋め込みに不適切なためエラー
+		// repeated fields are unsuitable for embedding in resource templates; expect error
 		req := &pb.Policy{
 			FieldMappings: []*pb.FieldMapping{{Placeholder: "x"}},
 		}
@@ -168,7 +168,7 @@ func TestExtractFieldFromRequest(t *testing.T) {
 	})
 
 	t.Run("enum field is unsupported", func(t *testing.T) {
-		// enum フィールドは数値/名前のどちらで返すか曖昧なため非サポート
+		// enum fields are unsupported because it is ambiguous whether to return a number or a name
 		typ := descriptorpb.FieldDescriptorProto_TYPE_STRING
 		req := &descriptorpb.FieldDescriptorProto{Type: &typ}
 		_, err := extractFieldFromRequest(log, req, "type")
@@ -178,7 +178,7 @@ func TestExtractFieldFromRequest(t *testing.T) {
 	})
 
 	t.Run("field not found", func(t *testing.T) {
-		// proto スキーマに存在しないフィールド名はエラー
+		// a field name that does not exist in the proto schema is an error
 		req := &pb.Policy{Resource: "x"}
 		_, err := extractFieldFromRequest(log, req, "nonexistent_field")
 		if err == nil {
@@ -187,7 +187,7 @@ func TestExtractFieldFromRequest(t *testing.T) {
 	})
 
 	t.Run("not a proto.Message", func(t *testing.T) {
-		// proto.Message を実装していない型はリフレクションを使えないためエラー
+		// types that do not implement proto.Message cannot use reflection; expect error
 		req := struct{ ID string }{ID: "x"}
 		_, err := extractFieldFromRequest(log, req, "id")
 		if err == nil {
@@ -198,8 +198,8 @@ func TestExtractFieldFromRequest(t *testing.T) {
 
 // --- resolveResourceFromRequest ---
 
-// ポリシーのリソーステンプレートにリクエストのフィールド値を埋め込んで
-// 最終的なリソース文字列を生成できることを確認する。
+// Verify that the final resource string is generated by embedding request field values
+// into the policy's resource template.
 func TestResolveResourceFromRequest(t *testing.T) {
 	log := newLogger(slog.LevelError)
 
@@ -212,7 +212,7 @@ func TestResolveResourceFromRequest(t *testing.T) {
 		wantErr      bool
 	}{
 		{
-			// field_mappings が空の場合はテンプレートをそのまま返す
+			// when field_mappings is empty, the template is returned as-is
 			name:         "no field mappings",
 			policy:       &pb.Policy{Resource: "posts", Action: "read"},
 			req:          &pb.Policy{},
@@ -220,7 +220,7 @@ func TestResolveResourceFromRequest(t *testing.T) {
 			wantAction:   "read",
 		},
 		{
-			// <placeholder> をリクエストのフィールド値で置換する
+			// <placeholder> is replaced with the request field value
 			name: "placeholder replaced from request field",
 			policy: &pb.Policy{
 				Resource: "posts/<resource>",
@@ -234,7 +234,7 @@ func TestResolveResourceFromRequest(t *testing.T) {
 			wantAction:   "write",
 		},
 		{
-			// 複数プレースホルダーをそれぞれ対応するフィールドで置換する
+			// multiple placeholders are each replaced by their corresponding field
 			name: "multiple placeholders replaced",
 			policy: &pb.Policy{
 				Resource: "<action>/<resource>",
@@ -249,7 +249,7 @@ func TestResolveResourceFromRequest(t *testing.T) {
 			wantAction:   "read",
 		},
 		{
-			// テンプレートに含まれないプレースホルダーは無視される
+			// placeholders not present in the template are ignored
 			name: "placeholder not in template is skipped",
 			policy: &pb.Policy{
 				Resource: "posts",
@@ -263,21 +263,21 @@ func TestResolveResourceFromRequest(t *testing.T) {
 			wantAction:   "write",
 		},
 		{
-			// resource が空のポリシーはプロト定義の不備なためエラー
+			// a policy with an empty resource indicates a proto definition issue; expect error
 			name:    "empty resource returns error",
 			policy:  &pb.Policy{Resource: "", Action: "read"},
 			req:     &pb.Policy{},
 			wantErr: true,
 		},
 		{
-			// action が空のポリシーはプロト定義の不備なためエラー
+			// a policy with an empty action indicates a proto definition issue; expect error
 			name:    "empty action returns error",
 			policy:  &pb.Policy{Resource: "posts", Action: ""},
 			req:     &pb.Policy{},
 			wantErr: true,
 		},
 		{
-			// placeholder が空の field_mapping はプロト定義の不備なためエラー
+			// a field_mapping with an empty placeholder indicates a proto definition issue; expect error
 			name: "mapping with empty placeholder returns error",
 			policy: &pb.Policy{
 				Resource: "posts/<id>",
@@ -290,7 +290,7 @@ func TestResolveResourceFromRequest(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			// request_field が空の field_mapping はプロト定義の不備なためエラー
+			// a field_mapping with an empty request_field indicates a proto definition issue; expect error
 			name: "mapping with empty request_field returns error",
 			policy: &pb.Policy{
 				Resource: "posts/<id>",
@@ -303,7 +303,7 @@ func TestResolveResourceFromRequest(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			// request_field に指定したフィールドがリクエストに存在しない場合はエラー
+			// when the field specified by request_field does not exist in the request, expect error
 			name: "field not found in request returns error",
 			policy: &pb.Policy{
 				Resource: "posts/<id>",
@@ -341,8 +341,8 @@ func TestResolveResourceFromRequest(t *testing.T) {
 
 // --- Context helpers ---
 
-// markInterceptorRan が context に実行済みフラグを書き込み、
-// InterceptorRanFromContext がそれを正しく読み取れることを確認する。
+// Verify that markInterceptorRan writes the "ran" flag into the context
+// and that InterceptorRanFromContext reads it back correctly.
 func TestInterceptorRanFromContext(t *testing.T) {
 	ctx := context.Background()
 	if InterceptorRanFromContext(ctx) {
@@ -354,8 +354,8 @@ func TestInterceptorRanFromContext(t *testing.T) {
 	}
 }
 
-// withPolicy が context にポリシーを書き込み、
-// PolicyFromContext がそれを正しく読み取れることを確認する。
+// Verify that withPolicy writes the policy into the context
+// and that PolicyFromContext reads it back correctly.
 func TestPolicyFromContext(t *testing.T) {
 	ctx := context.Background()
 	p, ok := PolicyFromContext(ctx)
@@ -378,10 +378,10 @@ func TestPolicyFromContext(t *testing.T) {
 
 // --- Interceptor ---
 
-// proto レジストリに登録されていないメソッドはポリシーなしと判断し、
-// handler をそのまま呼び出すことを確認する。
-// また handler に渡される context に InterceptorRan フラグが立ち、
-// ポリシーは設定されていないことも検証する。
+// Verify that a method not registered in the proto registry is treated as having no policy
+// and that the handler is called directly.
+// Also verifies that the context passed to the handler has the InterceptorRan flag set
+// but no policy configured.
 func TestInterceptor_UnknownMethod_CallsHandler(t *testing.T) {
 	interceptor := Interceptor()
 
@@ -413,8 +413,8 @@ func TestInterceptor_UnknownMethod_CallsHandler(t *testing.T) {
 	}
 }
 
-// gRPC フルメソッド名の形式が不正な場合は handler を呼ばずに
-// Internal エラーを返すことを確認する。
+// Verify that an invalid gRPC full method name format returns an Internal error
+// without calling the handler.
 func TestInterceptor_InvalidMethodFormat_ReturnsError(t *testing.T) {
 	interceptor := Interceptor()
 

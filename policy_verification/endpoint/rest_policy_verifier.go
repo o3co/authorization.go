@@ -34,9 +34,9 @@ import (
 const defaultMaxResponseBodySize int64 = 1024 * 1024 // 1MB
 const defaultTimeout = 10 * time.Second
 
-// buildConfig は NewRESTEndpoint の構築時にのみ使用する一時設定。
-// timeout など構築後に不要なフィールドをここで管理することで、
-// restPolicyVerifierEndpoint の struct を実行時に必要なフィールドのみに絞る。
+// buildConfig is a temporary configuration used only during NewRESTEndpoint construction.
+// Managing fields like timeout here that are unnecessary after construction
+// keeps restPolicyVerifierEndpoint's struct limited to only the fields needed at runtime.
 type buildConfig struct {
 	timeout              time.Duration
 	maxResponseBodySize  int64
@@ -45,10 +45,10 @@ type buildConfig struct {
 	requestIDFunc        func(context.Context) string
 }
 
-// Option は REST エンドポイントの設定オプション
+// Option configures the REST endpoint.
 type Option func(*buildConfig)
 
-// WithTimeout HTTP クライアントのタイムアウトを設定する。未指定時のデフォルトは 10s。
+// WithTimeout sets the HTTP client timeout. Default when unspecified is 10s.
 func WithTimeout(d time.Duration) Option {
 	if d <= 0 {
 		panic(fmt.Sprintf("timeout must be positive, got %v", d))
@@ -58,7 +58,7 @@ func WithTimeout(d time.Duration) Option {
 	}
 }
 
-// WithMaxResponseBodySize レスポンスボディの最大読み取りサイズを設定する（バイト単位）。
+// WithMaxResponseBodySize sets the maximum number of bytes to read from the response body.
 func WithMaxResponseBodySize(size int64) Option {
 	if size <= 0 {
 		panic(fmt.Sprintf("maxResponseBodySize must be positive, got %d", size))
@@ -68,7 +68,7 @@ func WithMaxResponseBodySize(size int64) Option {
 	}
 }
 
-// WithLogLevel ログレベルを指定する。未指定時のデフォルトは slog.LevelError。
+// WithLogLevel sets the log level. Default when unspecified is slog.LevelError.
 func WithLogLevel(level slog.Level) Option {
 	return func(c *buildConfig) {
 		c.logger = newLogger(level)
@@ -93,7 +93,7 @@ func WithRequestIDFunc(fn func(context.Context) string) Option {
 	}
 }
 
-// restPolicyVerifierEndpoint は REST 認可サービスへの VerifierEndpoint 実装
+// restPolicyVerifierEndpoint is a VerifierEndpoint implementation for the REST authorization service.
 type restPolicyVerifierEndpoint struct {
 	httpClient           *http.Client
 	verifyURL            string
@@ -103,8 +103,8 @@ type restPolicyVerifierEndpoint struct {
 	requestIDFunc        func(context.Context) string
 }
 
-// NewRESTEndpoint REST 認可エンドポイントのコンストラクタ。
-// baseURL が不正な場合はエラーを返す。
+// NewRESTEndpoint is the constructor for the REST authorization endpoint.
+// Returns an error if baseURL is invalid.
 func NewRESTEndpoint(baseURL string, opts ...Option) (VerifierEndpoint, error) {
 	rawBase := strings.TrimSpace(baseURL)
 	if rawBase == "" {
@@ -147,7 +147,7 @@ type token struct {
 	Value     string
 }
 
-// getToken gRPC incoming metadata から Authorization トークンを取得する。
+// getToken retrieves the Authorization token from gRPC incoming metadata.
 func getToken(ctx context.Context) (*token, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
@@ -167,23 +167,23 @@ func getToken(ctx context.Context) (*token, error) {
 	return &token{TokenType: parts[0], Value: parts[1]}, nil
 }
 
-// Verify 権限チェックを実行する。
+// Verify executes the authorization check.
 func (e *restPolicyVerifierEndpoint) Verify(ctx context.Context, resource, action string) error {
-	// --- 認可トークン取得 -------------------------------------------------
+	// --- Retrieve authorization token -------------------------------------------------
 	tok, err := getToken(ctx)
 	if err != nil {
 		return status.Errorf(codes.Unauthenticated, "failed to get authorization token: %v", err)
 	}
 
-	// --- リクエストボディ作成 -----------------------------------------------
+	// --- Build request body -----------------------------------------------
 	reqBody := map[string]string{"resource": resource, "action": action}
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return status.Errorf(codes.Internal, "failed to marshal request body: %v", err)
 	}
 
-	// --- HTTP リクエスト作成 -----------------------------------------------
-	// Context を紐付けたリクエストを作成することで、呼び出し元のキャンセルやタイムアウトを継承する。
+	// --- Create HTTP request -----------------------------------------------
+	// Binding the caller's Context inherits cancellation and timeout from the caller.
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, e.verifyURL, bytes.NewReader(jsonData))
 	if err != nil {
 		return status.Errorf(codes.Internal, "failed to create request: %v", err)
@@ -201,14 +201,14 @@ func (e *restPolicyVerifierEndpoint) Verify(ctx context.Context, resource, actio
 		}
 	}
 
-	// --- リクエスト送信 ---------------------------------------------------
+	// --- Send request ---------------------------------------------------
 	resp, err := e.httpClient.Do(req)
 	if err != nil {
 		return status.Errorf(codes.Internal, "request failed: %v", err)
 	}
 	defer resp.Body.Close()
 
-	// ボディを最大 maxResponseBodySize バイトまで読み出す（メモリ保護）。
+	// Read response body up to maxResponseBodySize bytes (memory protection).
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, e.maxResponseBodySize))
 	if err != nil {
 		e.logger.Error("failed to read response body", "error", err, "x-request-id", requestID)
@@ -217,7 +217,7 @@ func (e *restPolicyVerifierEndpoint) Verify(ctx context.Context, resource, actio
 
 	e.logger.Debug("response received", "status", resp.StatusCode, "x-request-id", requestID)
 
-	// --- ステータスコードに基づく判定 -------------------------------------
+	// --- Evaluate based on status code -------------------------------------
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		return nil
 	}
